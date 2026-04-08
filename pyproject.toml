@@ -1,0 +1,26 @@
+[project]
+name = "warframe"
+version = "0.1.0"
+description = ""
+authors = [
+    {name = "Diogo Regateiro",email = "diogo.regateiro@atlar.pt"}
+]
+readme = "README.md"
+requires-python = ">=3.12"
+
+[tool.poetry]
+package-mode = false
+
+[tool.poetry.dependencies]
+python = "^3.12"
+
+[tool.poetry.group.dev.dependencies]
+black = "^25.1.0"
+flake8 = "^7.3.0"
+isort = "^6.0.1"
+pylint = "^3.3.7"
+pytest = "^8.3.0"
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"
