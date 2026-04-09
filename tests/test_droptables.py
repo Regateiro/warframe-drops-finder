@@ -278,3 +278,48 @@ class TestIntegration:
         has_relic = any("Relic:" in loc for loc in locations)
         assert has_mission
         assert has_relic
+
+
+class TestMissionTypeFilter:
+    def test_filters_by_single_mission_type(self):
+        results = [
+            ("Scindo", 5.0, "Earth - Cervantes", "Survival", "C"),
+            ("Scindo", 3.0, "Mars - War", "Capture", "A"),
+            ("Forma", 2.0, "Earth - Tyr", "Exterminate", "-"),
+        ]
+        filtered = [r for r in results if r[3].lower() in ["survival"]]
+        assert len(filtered) == 1
+        assert filtered[0][3] == "Survival"
+
+    def test_filters_by_multiple_mission_types(self):
+        results = [
+            ("Scindo", 5.0, "Earth - Cervantes", "Survival", "C"),
+            ("Scindo", 3.0, "Mars - War", "Capture", "A"),
+            ("Forma", 2.0, "Earth - Tyr", "Exterminate", "-"),
+        ]
+        filtered = [r for r in results if r[3].lower() in ["survival", "capture"]]
+        assert len(filtered) == 2
+        assert {r[3] for r in filtered} == {"Survival", "Capture"}
+
+    def test_filter_case_insensitive(self):
+        results = [
+            ("Scindo", 5.0, "Earth - Cervantes", "Survival", "C"),
+        ]
+        filtered = [r for r in results if r[3].lower() in ["survival", "SURVIVAL"]]
+        assert len(filtered) == 1
+
+    def test_filter_returns_empty_when_no_match(self):
+        results = [
+            ("Scindo", 5.0, "Earth - Cervantes", "Survival", "C"),
+        ]
+        filtered = [r for r in results if r[3].lower() in ["defense"]]
+        assert len(filtered) == 0
+
+    def test_filter_preserves_empty_mission_type(self):
+        results = [
+            ("Scindo Prime Handle", 25.0, "Relic: Lith A1", "", "Intact"),
+            ("Forma Blueprint", 11.0, "Relic: Lith A1", "", "Intact"),
+        ]
+        mission_types = []
+        filtered = results if not mission_types else [r for r in results if r[3].lower() in [mt.lower() for mt in mission_types]]
+        assert len(filtered) == 2

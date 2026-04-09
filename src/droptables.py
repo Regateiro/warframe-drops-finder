@@ -421,6 +421,7 @@ def main() -> None:
     parser.add_argument("-r", "--refresh", action="store_true", help="Force refresh cache")
     parser.add_argument("-n", "--num", type=int, default=20, help="Number of results to show")
     parser.add_argument("-e", "--exact", action="store_true", help="Match item names exactly")
+    parser.add_argument("-m", "--mission-type", action="append", default=[], help="Filter by mission type (can be specified multiple times)")
     args = parser.parse_args()
 
     data = fetch_drop_data(force_refresh=args.refresh)
@@ -446,6 +447,11 @@ def main() -> None:
         query = query.strip()
         if query:
             all_results.extend(search_items(data, query, exact=args.exact))
+
+    # Filter by mission type if specified
+    if args.mission_type:
+        mission_types_lower = [mt.lower() for mt in args.mission_type]
+        all_results = [r for r in all_results if r[3].lower() in mission_types_lower]
 
     # Sort combined results by chance
     all_results = sorted(all_results, key=lambda x: x[1], reverse=True)
