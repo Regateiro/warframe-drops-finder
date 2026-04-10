@@ -1,11 +1,13 @@
 import pytest
 
-from src.droptables import (
+from warframe import (
+    DropResult,
     format_multi_results,
     format_results,
     iter_mission_drops,
     iter_mod_drops,
     iter_relic_drops,
+    search_items,
 )
 
 
@@ -78,13 +80,13 @@ class TestIterMissionDrops:
     def test_fuzzy_match_returns_results(self, sample_data):
         results = iter_mission_drops(sample_data, "Scindo")
         assert len(results) == 2
-        items = [r[0] for r in results]
+        items = [r.item_name for r in results]
         assert "Scindo" in items
 
     def test_exact_match_returns_results(self, sample_data):
         results = iter_mission_drops(sample_data, "Scindo", exact=True)
         assert len(results) == 2
-        items = [r[0] for r in results]
+        items = [r.item_name for r in results]
         assert "Scindo" in items
 
     def test_exact_match_no_partial(self, sample_data):
@@ -101,14 +103,14 @@ class TestIterMissionDrops:
 
     def test_dict_rewards_have_rotation(self, sample_data):
         results = iter_mission_drops(sample_data, "Scindo")
-        rotations = [r[4] for r in results]
+        rotations = [r.rotation for r in results]
         assert "C" in rotations
         assert "A" in rotations
 
     def test_list_rewards_have_dash_rotation(self, sample_data):
         results = iter_mission_drops(sample_data, "Forma")
         assert len(results) == 1
-        assert results[0][4] == "-"
+        assert results[0].rotation == "-"
 
 
 class TestIterRelicDrops:
@@ -118,13 +120,13 @@ class TestIterRelicDrops:
 
     def test_location_contains_relic_info(self, sample_data):
         results = iter_relic_drops(sample_data, "Scindo")
-        locations = [r[2] for r in results]
+        locations = [r.location for r in results]
         assert any("Lith" in loc for loc in locations)
         assert any("Meso" in loc for loc in locations)
 
     def test_state_is_preserved(self, sample_data):
         results = iter_relic_drops(sample_data, "Scindo")
-        states = [r[4] for r in results]
+        states = [r.rotation for r in results]
         assert "Intact" in states
         assert "Radiant" in states
 
@@ -136,7 +138,7 @@ class TestIterModDrops:
 
     def test_mod_location_format(self, sample_data):
         results = iter_mod_drops(sample_data, "Bite")
-        locations = [r[2] for r in results]
+        locations = [r.location for r in results]
         assert all("Mod drop:" in loc for loc in locations)
 
 
@@ -147,7 +149,7 @@ class TestFormatResults:
         assert "No results found" in captured.out
 
     def test_single_result(self, sample_data, capsys):
-        results = [("Forma", 2.0, "Earth - Tyr", "Exterminate", "-")]
+        results = [DropResult("Forma", 2.0, "Earth - Tyr", "Exterminate", "-")]
         format_results(results, max_results=20)
         captured = capsys.readouterr()
         assert "Forma" in captured.out
@@ -156,8 +158,8 @@ class TestFormatResults:
 
     def test_multiple_rotations_consolidated(self, sample_data, capsys):
         results = [
-            ("Scindo", 5.0, "Earth - Cervantes", "Survival", "C"),
-            ("Scindo", 3.0, "Earth - Cervantes", "Survival", "A"),
+            DropResult("Scindo", 5.0, "Earth - Cervantes", "Survival", "C"),
+            DropResult("Scindo", 3.0, "Earth - Cervantes", "Survival", "A"),
         ]
         format_results(results, max_results=20)
         captured = capsys.readouterr()
@@ -166,8 +168,8 @@ class TestFormatResults:
 
     def test_shows_summary_count(self, sample_data, capsys):
         results = [
-            ("Scindo", 5.0, "Earth - Cervantes", "Survival", "C"),
-            ("Scindo", 3.0, "Mars - War", "Capture", "A"),
+            DropResult("Scindo", 5.0, "Earth - Cervantes", "Survival", "C"),
+            DropResult("Scindo", 3.0, "Mars - War", "Capture", "A"),
         ]
         format_results(results, max_results=20)
         captured = capsys.readouterr()
@@ -183,8 +185,8 @@ class TestFormatMultiResults:
 
     def test_columns_are_aligned(self, sample_data, capsys):
         results = [
-            ("Bite", 0.22, "Mod drop: Tamm", "", "-"),
-            ("Bite", 0.22, "Mod drop: Corrupted Drahk", "", "-"),
+            DropResult("Bite", 0.22, "Mod drop: Tamm", "", "-"),
+            DropResult("Bite", 0.22, "Mod drop: Corrupted Drahk", "", "-"),
         ]
         format_multi_results(results, queries=["Bite"], max_results=20)
         captured = capsys.readouterr()
@@ -202,8 +204,8 @@ class TestFormatMultiResults:
 
     def test_different_chance_lengths_align(self, sample_data, capsys):
         results = [
-            ("Bite", 0.22, "Mod drop: Tamm", "", "-"),
-            ("Bite", 15.49, "Eris - Candiru", "Caches", "C"),
+            DropResult("Bite", 0.22, "Mod drop: Tamm", "", "-"),
+            DropResult("Bite", 15.49, "Eris - Candiru", "Caches", "C"),
         ]
         format_multi_results(results, queries=["Bite"], max_results=20)
         captured = capsys.readouterr()
@@ -220,7 +222,7 @@ class TestFormatMultiResults:
 
     def test_strips_relic_suffix(self, sample_data, capsys):
         results = [
-            ("Lith A1 Relic", 25.0, "Relic: Lith A1", "Intact", "Intact"),
+            DropResult("Lith A1 Relic", 25.0, "Relic: Lith A1", "Intact", "Intact"),
         ]
         format_multi_results(results, queries=["Lith A1 Relic"], max_results=20)
         captured = capsys.readouterr()
@@ -232,9 +234,9 @@ class TestFormatMultiResults:
 
     def test_sorted_by_most_items_first(self, sample_data, capsys):
         results = [
-            ("Scindo", 5.0, "Earth - Cervantes", "Survival", "C"),
-            ("Neurodes", 10.0, "Earth - Cervantes", "Survival", "A"),
-            ("Scindo", 3.0, "Mars - War", "Capture", "A"),
+            DropResult("Scindo", 5.0, "Earth - Cervantes", "Survival", "C"),
+            DropResult("Neurodes", 10.0, "Earth - Cervantes", "Survival", "A"),
+            DropResult("Scindo", 3.0, "Mars - War", "Capture", "A"),
         ]
         format_multi_results(results, queries=["Scindo", "Neurodes"], max_results=20)
         captured = capsys.readouterr()
@@ -245,8 +247,8 @@ class TestFormatMultiResults:
 
     def test_shows_correct_item_columns(self, sample_data, capsys):
         results = [
-            ("Scindo", 5.0, "Earth - Cervantes", "Survival", "C"),
-            ("Neurodes", 10.0, "Earth - Cervantes", "Survival", "A"),
+            DropResult("Scindo", 5.0, "Earth - Cervantes", "Survival", "C"),
+            DropResult("Neurodes", 10.0, "Earth - Cervantes", "Survival", "A"),
         ]
         format_multi_results(results, queries=["Scindo", "Neurodes"], max_results=20)
         captured = capsys.readouterr()
@@ -261,19 +263,17 @@ class TestIntegration:
     def test_end_to_end_fuzzy_search(self, sample_data):
         results = iter_mission_drops(sample_data, "scindo")
         assert len(results) == 2
-        assert all("Scindo" in r[0] for r in results)
+        assert all("Scindo" in r.item_name for r in results)
 
     def test_end_to_end_exact_search(self, sample_data):
         results = iter_mission_drops(sample_data, "Scindo", exact=True)
         assert len(results) == 2
 
     def test_combines_all_sources(self, sample_data):
-        from src.droptables import search_items
-
         results = search_items(sample_data, "Scindo")
         assert len(results) >= 4
 
-        locations = [r[2] for r in results]
+        locations = [r.location for r in results]
         has_mission = any("Earth" in loc or "Mars" in loc for loc in locations)
         has_relic = any("Relic:" in loc for loc in locations)
         assert has_mission
@@ -283,43 +283,43 @@ class TestIntegration:
 class TestMissionTypeFilter:
     def test_filters_by_single_mission_type(self):
         results = [
-            ("Scindo", 5.0, "Earth - Cervantes", "Survival", "C"),
-            ("Scindo", 3.0, "Mars - War", "Capture", "A"),
-            ("Forma", 2.0, "Earth - Tyr", "Exterminate", "-"),
+            DropResult("Scindo", 5.0, "Earth - Cervantes", "Survival", "C"),
+            DropResult("Scindo", 3.0, "Mars - War", "Capture", "A"),
+            DropResult("Forma", 2.0, "Earth - Tyr", "Exterminate", "-"),
         ]
-        filtered = [r for r in results if r[3].lower() in ["survival"]]
+        filtered = [r for r in results if r.mission_type.lower() in ["survival"]]
         assert len(filtered) == 1
-        assert filtered[0][3] == "Survival"
+        assert filtered[0].mission_type == "Survival"
 
     def test_filters_by_multiple_mission_types(self):
         results = [
-            ("Scindo", 5.0, "Earth - Cervantes", "Survival", "C"),
-            ("Scindo", 3.0, "Mars - War", "Capture", "A"),
-            ("Forma", 2.0, "Earth - Tyr", "Exterminate", "-"),
+            DropResult("Scindo", 5.0, "Earth - Cervantes", "Survival", "C"),
+            DropResult("Scindo", 3.0, "Mars - War", "Capture", "A"),
+            DropResult("Forma", 2.0, "Earth - Tyr", "Exterminate", "-"),
         ]
-        filtered = [r for r in results if r[3].lower() in ["survival", "capture"]]
+        filtered = [r for r in results if r.mission_type.lower() in ["survival", "capture"]]
         assert len(filtered) == 2
-        assert {r[3] for r in filtered} == {"Survival", "Capture"}
+        assert {r.mission_type for r in filtered} == {"Survival", "Capture"}
 
     def test_filter_case_insensitive(self):
         results = [
-            ("Scindo", 5.0, "Earth - Cervantes", "Survival", "C"),
+            DropResult("Scindo", 5.0, "Earth - Cervantes", "Survival", "C"),
         ]
-        filtered = [r for r in results if r[3].lower() in ["survival", "SURVIVAL"]]
+        filtered = [r for r in results if r.mission_type.lower() in ["survival", "SURVIVAL"]]
         assert len(filtered) == 1
 
     def test_filter_returns_empty_when_no_match(self):
         results = [
-            ("Scindo", 5.0, "Earth - Cervantes", "Survival", "C"),
+            DropResult("Scindo", 5.0, "Earth - Cervantes", "Survival", "C"),
         ]
-        filtered = [r for r in results if r[3].lower() in ["defense"]]
+        filtered = [r for r in results if r.mission_type.lower() in ["defense"]]
         assert len(filtered) == 0
 
     def test_filter_preserves_empty_mission_type(self):
         results = [
-            ("Scindo Prime Handle", 25.0, "Relic: Lith A1", "", "Intact"),
-            ("Forma Blueprint", 11.0, "Relic: Lith A1", "", "Intact"),
+            DropResult("Scindo Prime Handle", 25.0, "Relic: Lith A1", "", "Intact"),
+            DropResult("Forma Blueprint", 11.0, "Relic: Lith A1", "", "Intact"),
         ]
         mission_types = []
-        filtered = results if not mission_types else [r for r in results if r[3].lower() in [mt.lower() for mt in mission_types]]
+        filtered = results if not mission_types else [r for r in results if r.mission_type.lower() in [mt.lower() for mt in mission_types]]
         assert len(filtered) == 2
