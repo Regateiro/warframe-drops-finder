@@ -1,12 +1,32 @@
+import re
 from itertools import chain
 from typing import Any, Callable
 
 from .models import DropResult
 
+RELIC_PATTERN = re.compile(r"^(lith|meso|neo|axi)\s+[a-z][1-9][0-9]?$", re.IGNORECASE)
+
 
 def make_match_fn(query: str, exact: bool) -> Callable[[str], bool]:
     query_lower = query.lower()
-    return (lambda name: name.lower() == query_lower) if exact else (lambda name: query_lower in name.lower())
+    if exact:
+        if query_lower.endswith(" relic"):
+            return lambda name: name.lower() == query_lower
+
+        paren_idx = query_lower.rfind(" (")
+        if paren_idx > 0 and RELIC_PATTERN.match(query_lower[:paren_idx]):
+            base = query_lower[:paren_idx]
+            relic_variant = f"{base} relic{query_lower[paren_idx:]}"
+            return lambda name: name.lower() in (query_lower, relic_variant)
+
+        if RELIC_PATTERN.match(query_lower):
+            relic_variant = f"{query_lower} relic"
+            return lambda name: name.lower() in (query_lower, relic_variant)
+
+        relic_variant = f"{query_lower} relic"
+        radiant_variant = f"{query_lower} relic (radiant)"
+        return lambda name: name.lower() in (query_lower, relic_variant, radiant_variant)
+    return lambda name: query_lower in name.lower()
 
 
 def iter_mission_drops(data: dict[str, Any], query: str, exact: bool = False) -> list[DropResult]:

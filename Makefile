@@ -1,4 +1,4 @@
-.PHONY: lint test
+.PHONY: lint test serve
 
 lint:
 	poetry run black -l 150 warframe tests/test_droptables.py
@@ -8,3 +8,6 @@ lint:
 
 test:
 	poetry run pytest tests/ -v
+
+serve:
+	poetry run python -m warframe.web

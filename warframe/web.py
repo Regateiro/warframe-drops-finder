@@ -1,0 +1,248 @@
+import json
+import os
+from collections import defaultdict
+from html import escape as html_escape
+from http.server import BaseHTTPRequestHandler, HTTPServer
+from urllib.parse import parse_qs, urlparse
+
+from .fetcher import fetch_drop_data, refresh_drop_data
+from .iterators import search_items
+
+
+def parse_queries(query: str) -> list[str]:
+    return [q.strip() for q in query.split(",") if q.strip()]
+
+
+def run_search(data: dict, query: str, exact: bool) -> list:
+    queries = parse_queries(query)
+    results = []
+    for q in queries:
+        results.extend(search_items(data, q, exact=exact))
+    return sorted(results, key=lambda x: x.chance, reverse=True)
+
+
+def strip_relic_suffix(name: str) -> str:
+    return name.replace(" Relic", "").replace(" (Radiant)", "")
+
+
+def strip_relic_for_display(name: str) -> str:
+    return name.replace(" Relic", "")
+
+
+def format_multi_table_html(results: list, queries: list[str], max_results: int) -> str:
+    by_location: dict = defaultdict(lambda: defaultdict(dict))
+    for result in results:
+        key = (result.location, result.mission_type)
+        if result.rotation not in by_location[key][result.item_name] or by_location[key][result.item_name][result.rotation] < result.chance:
+            by_location[key][result.item_name][result.rotation] = result.chance
+
+    def location_score(entry):
+        _, items_dict = entry
+        best_chance = max(c for v in items_dict.values() for c in v.values())
+        return len(items_dict), best_chance
+
+    sorted_locations = sorted(by_location.items(), key=location_score, reverse=True)
+
+    base_items = [strip_relic_suffix(q) for q in queries]
+
+    def make_columns(item_dict: dict) -> list[str]:
+        cols = []
+        for base in base_items:
+            if base in item_dict:
+                cols.append(base)
+            elif f"{base} Relic" in item_dict:
+                cols.append(f"{base} Relic")
+            if f"{base} (Radiant)" in item_dict:
+                cols.append(f"{base} (Radiant)")
+            elif f"{base} Relic (Radiant)" in item_dict:
+                cols.append(f"{base} Relic (Radiant)")
+        return cols
+
+    if len(queries) > 1:
+        item_columns = []
+        for _, items_dict in by_location.items():
+            for col in make_columns(items_dict):
+                if col not in item_columns:
+                    item_columns.append(col)
+    else:
+        item_columns = sorted(set(r.item_name for r in results))
+
+    headers = "".join(f"<th>{html_escape(strip_relic_for_display(item))}</th>" for item in item_columns)
+
+    rows = []
+    for idx, ((location, mission_type), items_dict) in enumerate(sorted_locations[:max_results], 1):
+        row_cells = f"<td>{idx}</td><td>{html_escape(location)}</td><td>{html_escape(mission_type)}</td>"
+        for item in item_columns:
+            if item in items_dict:
+                rotations = items_dict[item]
+                best_rot = max(rotations.items(), key=lambda x: x[1])
+                row_cells += f'<td class="chance">{best_rot[0]}:{best_rot[1]:.2f}%</td>'
+            else:
+                row_cells += "<td>-</td>"
+        rows.append(f"<tr>{row_cells}</tr>")
+
+    row_html = "".join(rows)
+    unique_locations = len(sorted_locations)
+
+    return MULTI_RESULT_TABLE.format(count=len(results), locations=unique_locations, headers=headers, rows=row_html)
+
+
+INDEX_HTML = """<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Warframe Drop Locations</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div class="header">
+        <h1>Warframe Drop Locations</h1>
+        <a class="btn" href="/?refresh=1&q={query}">Refresh Data</a>
+    </div>
+    <form method="get" action="/">
+        <input type="text" name="q" placeholder="Search for an item..." value="{query}" autofocus>
+        <input type="number" name="n" value="{num}" min="1" max="100" placeholder="Max">
+        <label><input type="checkbox" name="exact" {exact_checked}> Exact match</label>
+        <button type="submit">Search</button>
+    </form>
+    {results}
+</body>
+</html>"""
+
+RESULT_ROWS = """<div class="results-header">
+    <span class="results-count">{count} results</span>
+</div>
+<table>
+    <tr><th>Item</th><th>Chance</th><th>Location</th><th>Mission</th><th>Rotation</th></tr>
+{rows}
+</table>"""
+
+MULTI_RESULT_TABLE = """<div class="results-header">
+    <span class="results-count">{count} results across {locations} locations</span>
+</div>
+<div class="table-wrapper">
+<table>
+    <tr><th>#</th><th>Location</th><th>Mission</th>{headers}</tr>
+{rows}
+</table>
+</div>"""
+
+NO_RESULTS = """<p class="no-results">No results found for "{query}"</p>"""
+
+
+class DropHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        parsed = urlparse(self.path)
+        if parsed.path == "/api/drops":
+            self.handle_api()
+        elif parsed.path == "/":
+            self.handle_index()
+        elif parsed.path == "/static/style.css":
+            self.handle_static()
+        else:
+            self.send_error(404, "Not Found")
+
+    def handle_static(self):
+        css_path = os.path.join(os.path.dirname(__file__), "static", "style.css")
+        with open(css_path, "rb") as f:
+            self.send_response(200)
+            self.send_header("Content-Type", "text/css")
+            self.end_headers()
+            self.wfile.write(f.read())
+
+    def handle_index(self):
+        params = parse_qs(urlparse(self.path).query)
+        refresh = "refresh" in params
+        query = params.get("q", [""])[0]
+        num = int(params.get("n", ["20"])[0])
+        exact = "exact" in params
+        exact_checked = " checked" if exact else ""
+
+        results_html = ""
+        if query:
+            data = refresh_drop_data() if refresh else fetch_drop_data()
+            queries = parse_queries(query)
+            all_results = run_search(data, query, exact=exact)
+            results = all_results[:num]
+
+            if results:
+                if len(queries) > 1:
+                    results_html = format_multi_table_html(all_results, queries, num)
+                else:
+                    rows = "".join(
+                        f"<tr><td>{html_escape(r.item_name)}</td>"
+                        f'<td class="chance">{r.chance:.2f}%</td>'
+                        f"<td>{html_escape(r.location)}</td>"
+                        f"<td>{html_escape(r.mission_type)}</td>"
+                        f"<td>{html_escape(r.rotation)}</td></tr>"
+                        for r in results
+                    )
+                    results_html = RESULT_ROWS.format(count=len(results), rows=rows)
+            else:
+                results_html = NO_RESULTS.format(query=html_escape(query))
+
+        html = INDEX_HTML.format(query=html_escape(query), num=num, exact_checked=exact_checked, results=results_html)
+
+        self.send_response(200)
+        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.end_headers()
+        self.wfile.write(html.encode())
+
+    def handle_api(self):
+        parsed = urlparse(self.path)
+        query = parse_qs(parsed.query).get("q", [""])[0]
+        if not query:
+            self.send_error(400, "Missing query parameter 'q'")
+            return
+
+        exact = "exact" in parse_qs(parsed.query)
+        mission_types = parse_qs(parsed.query).get("mission_type", [])
+        max_results = int(parse_qs(parsed.query).get("n", ["20"])[0])
+
+        data = fetch_drop_data()
+        results = run_search(data, query, exact=exact)
+
+        if mission_types:
+            results = [r for r in results if r.mission_type.lower() in [mt.lower() for mt in mission_types]]
+
+        results = results[:max_results]
+
+        output = [
+            {
+                "item_name": r.item_name,
+                "chance": r.chance,
+                "location": r.location,
+                "mission_type": r.mission_type,
+                "rotation": r.rotation,
+            }
+            for r in results
+        ]
+
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.end_headers()
+        self.wfile.write(json.dumps(output).encode())
+
+    def log_message(self, format, *args):
+        print(f"[{self.log_date_time_string()}] {format % args}")
+
+
+def run_server(host: str = "0.0.0.0", port: int = 8080):
+    server = HTTPServer((host, port), DropHandler)
+    print(f"Starting server on http://{host}:{port}")
+    print("API endpoint: /api/drops?q=<query>")
+    print("Parameters:")
+    print("  q - Item name to search for (required)")
+    print("  exact - Match exactly (optional)")
+    print("  mission_type - Filter by mission type (repeatable)")
+    print("  n - Max results (default: 20)")
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        print("\nShutting down server...")
+        server.shutdown()
+
+
+if __name__ == "__main__":
+    run_server()
