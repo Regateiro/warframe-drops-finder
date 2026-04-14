@@ -166,7 +166,7 @@ class DropHandler(BaseHTTPRequestHandler):
             else:
                 results_html = NO_RESULTS.format(query=html_escape(query))
 
-        html = INDEX_HTML.format(query=html_escape(query), num=num, exact_checked=exact_checked, results=results_html)
+        html = INDEX_HTML.format(web_root=WEB_ROOT, query=html_escape(query), num=num, exact_checked=exact_checked, results=results_html)
 
         self.send_response(200)
         self.send_header("Content-Type", "text/html; charset=utf-8")
