@@ -78,7 +78,7 @@ cp .env.example .env
 |----------|---------|-------------|
 | `HOST` | `127.0.0.1` | Server bind address |
 | `PORT` | `8080` | Server port |
-| `WEB_ROOT` | (empty) | URL prefix (e.g., `/warframe`) |
+| `WEB_ROOT` | `/warframe` | URL prefix (e.g., `/warframe`) |
 
 ### Web Interface
 

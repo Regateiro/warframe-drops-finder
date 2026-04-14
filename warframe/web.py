@@ -14,7 +14,7 @@ load_dotenv()
 
 HOST = os.getenv("HOST", "127.0.0.1")
 PORT = int(os.getenv("PORT", "8080"))
-WEB_ROOT = os.getenv("WEB_ROOT", "")
+WEB_ROOT = os.getenv("WEB_ROOT", "/warframe")
 
 TEMPLATES_DIR = os.path.join(os.path.dirname(__file__), "templates")
 
