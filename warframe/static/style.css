@@ -100,6 +100,24 @@ th {
     position: sticky;
     top: 0;
 }
+th.sortable {
+    cursor: pointer;
+    user-select: none;
+}
+th.sortable::after {
+    content: '';
+    display: inline-block;
+    margin-left: 0.5rem;
+    opacity: 0.5;
+}
+th.asc::after {
+    content: '▼';
+    opacity: 1;
+}
+th.desc::after {
+    content: '▲';
+    opacity: 1;
+}
 td.chance {
     font-family: monospace;
 }

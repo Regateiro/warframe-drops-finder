@@ -8,6 +8,19 @@ from urllib.parse import parse_qs, urlparse
 from .fetcher import fetch_drop_data, refresh_drop_data
 from .iterators import search_items
 
+TEMPLATES_DIR = os.path.join(os.path.dirname(__file__), "templates")
+
+
+def load_template(name: str) -> str:
+    with open(os.path.join(TEMPLATES_DIR, name), "r") as f:
+        return f.read()
+
+
+INDEX_HTML = load_template("index.html")
+RESULT_ROWS = load_template("result_rows.html")
+MULTI_RESULT_TABLE = load_template("multi_result_table.html")
+NO_RESULTS = load_template("no_results.html")
+
 
 def parse_queries(query: str) -> list[str]:
     return [q.strip() for q in query.split(",") if q.strip()]
@@ -70,7 +83,7 @@ def format_multi_table_html(results: list, queries: list[str], max_results: int)
     headers = "".join(f"<th>{html_escape(strip_relic_for_display(item))}</th>" for item in item_columns)
 
     rows = []
-    for idx, ((location, mission_type), items_dict) in enumerate(sorted_locations[:max_results], 1):
+    for idx, ((location, mission_type), items_dict) in enumerate(sorted_locations if max_results == 0 else sorted_locations[:max_results], 1):
         row_cells = f"<td>{idx}</td><td>{html_escape(location)}</td><td>{html_escape(mission_type)}</td>"
         for item in item_columns:
             if item in items_dict:
@@ -87,50 +100,6 @@ def format_multi_table_html(results: list, queries: list[str], max_results: int)
     return MULTI_RESULT_TABLE.format(count=len(results), locations=unique_locations, headers=headers, rows=row_html)
 
 
-INDEX_HTML = """<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Warframe Drop Locations</title>
-    <link rel="stylesheet" href="/static/style.css">
-</head>
-<body>
-    <div class="header">
-        <h1>Warframe Drop Locations</h1>
-        <a class="btn" href="/?refresh=1&q={query}">Refresh Data</a>
-    </div>
-    <form method="get" action="/">
-        <input type="text" name="q" placeholder="Search for an item..." value="{query}" autofocus>
-        <input type="number" name="n" value="{num}" min="1" max="100" placeholder="Max">
-        <label><input type="checkbox" name="exact" {exact_checked}> Exact match</label>
-        <button type="submit">Search</button>
-    </form>
-    {results}
-</body>
-</html>"""
-
-RESULT_ROWS = """<div class="results-header">
-    <span class="results-count">{count} results</span>
-</div>
-<table>
-    <tr><th>Item</th><th>Chance</th><th>Location</th><th>Mission</th><th>Rotation</th></tr>
-{rows}
-</table>"""
-
-MULTI_RESULT_TABLE = """<div class="results-header">
-    <span class="results-count">{count} results across {locations} locations</span>
-</div>
-<div class="table-wrapper">
-<table>
-    <tr><th>#</th><th>Location</th><th>Mission</th>{headers}</tr>
-{rows}
-</table>
-</div>"""
-
-NO_RESULTS = """<p class="no-results">No results found for "{query}"</p>"""
-
-
 class DropHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         parsed = urlparse(self.path)
@@ -138,14 +107,15 @@ class DropHandler(BaseHTTPRequestHandler):
             self.handle_api()
         elif parsed.path == "/":
             self.handle_index()
-        elif parsed.path == "/static/style.css":
+        elif parsed.path in ("/static/style.css", "/static/sort.js"):
             self.handle_static()
         else:
             self.send_error(404, "Not Found")
 
     def handle_static(self):
-        css_path = os.path.join(os.path.dirname(__file__), "static", "style.css")
-        with open(css_path, "rb") as f:
+        filename = "style.css" if self.path.endswith(".css") else "sort.js"
+        static_path = os.path.join(os.path.dirname(__file__), "static", filename)
+        with open(static_path, "rb") as f:
             self.send_response(200)
             self.send_header("Content-Type", "text/css")
             self.end_headers()
@@ -155,7 +125,7 @@ class DropHandler(BaseHTTPRequestHandler):
         params = parse_qs(urlparse(self.path).query)
         refresh = "refresh" in params
         query = params.get("q", [""])[0]
-        num = int(params.get("n", ["20"])[0])
+        num = int(params.get("n", ["0"])[0])
         exact = "exact" in params
         exact_checked = " checked" if exact else ""
 
@@ -164,7 +134,7 @@ class DropHandler(BaseHTTPRequestHandler):
             data = refresh_drop_data() if refresh else fetch_drop_data()
             queries = parse_queries(query)
             all_results = run_search(data, query, exact=exact)
-            results = all_results[:num]
+            results = all_results[:num] if num > 0 else all_results
 
             if results:
                 if len(queries) > 1:
@@ -198,7 +168,7 @@ class DropHandler(BaseHTTPRequestHandler):
 
         exact = "exact" in parse_qs(parsed.query)
         mission_types = parse_qs(parsed.query).get("mission_type", [])
-        max_results = int(parse_qs(parsed.query).get("n", ["20"])[0])
+        max_results = int(parse_qs(parsed.query).get("n", ["0"])[0])
 
         data = fetch_drop_data()
         results = run_search(data, query, exact=exact)
@@ -206,7 +176,7 @@ class DropHandler(BaseHTTPRequestHandler):
         if mission_types:
             results = [r for r in results if r.mission_type.lower() in [mt.lower() for mt in mission_types]]
 
-        results = results[:max_results]
+        results = results[:max_results] if max_results > 0 else results
 
         output = [
             {
@@ -236,7 +206,7 @@ def run_server(host: str = "0.0.0.0", port: int = 8080):
     print("  q - Item name to search for (required)")
     print("  exact - Match exactly (optional)")
     print("  mission_type - Filter by mission type (repeatable)")
-    print("  n - Max results (default: 20)")
+    print("  n - Max results (default: 0 for all)")
     try:
         server.serve_forever()
     except KeyboardInterrupt:
