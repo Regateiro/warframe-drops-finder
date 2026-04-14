@@ -5,8 +5,15 @@ from html import escape as html_escape
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from urllib.parse import parse_qs, urlparse
 
+from dotenv import load_dotenv
+
 from .fetcher import fetch_drop_data, refresh_drop_data
 from .iterators import search_items
+
+load_dotenv()
+
+HOST = os.getenv("HOST", "0.0.0.0")
+PORT = int(os.getenv("PORT", "8080"))
 
 TEMPLATES_DIR = os.path.join(os.path.dirname(__file__), "templates")
 
@@ -198,7 +205,11 @@ class DropHandler(BaseHTTPRequestHandler):
         print(f"[{self.log_date_time_string()}] {format % args}")
 
 
-def run_server(host: str = "0.0.0.0", port: int = 8080):
+def run_server(host: str = None, port: int = None):
+    if host is None:
+        host = HOST
+    if port is None:
+        port = PORT
     server = HTTPServer((host, port), DropHandler)
     print(f"Starting server on http://{host}:{port}")
     print("API endpoint: /api/drops?q=<query>")

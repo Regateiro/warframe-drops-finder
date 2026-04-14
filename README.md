@@ -64,7 +64,20 @@ Or directly:
 poetry run python -m warframe.web
 ```
 
-The server starts on `http://localhost:8080`.
+The server starts on `http://localhost:8080` by default.
+
+### Configuration
+
+Create a `.env` file to customize the server:
+
+```bash
+cp .env.example .env
+```
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `HOST` | `0.0.0.0` | Server bind address |
+| `PORT` | `8080` | Server port |
 
 ### Web Interface
 
