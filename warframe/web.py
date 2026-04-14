@@ -123,7 +123,7 @@ class DropHandler(BaseHTTPRequestHandler):
             self.handle_index()
         elif self.normalized_path in ("/static/style.css", "/static/sort.js"):
             self.handle_static()
-        elif self.normalized_path == "/favicon.ico":
+        elif self.normalized_path == "/favicon.ico" or self.path.endswith("/favicon.ico"):
             self.handle_favicon()
         else:
             self.send_error(404, "Not Found")
