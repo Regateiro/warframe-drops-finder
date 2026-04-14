@@ -12,8 +12,9 @@ from .iterators import search_items
 
 load_dotenv()
 
-HOST = os.getenv("HOST", "0.0.0.0")
+HOST = os.getenv("HOST", "127.0.0.1")
 PORT = int(os.getenv("PORT", "8080"))
+WEB_ROOT = os.getenv("WEB_ROOT", "")
 
 TEMPLATES_DIR = os.path.join(os.path.dirname(__file__), "templates")
 
@@ -108,13 +109,19 @@ def format_multi_table_html(results: list, queries: list[str], max_results: int)
 
 
 class DropHandler(BaseHTTPRequestHandler):
+    @property
+    def normalized_path(self):
+        path = urlparse(self.path).path
+        if WEB_ROOT and path.startswith(WEB_ROOT):
+            path = path.removeprefix(WEB_ROOT)
+        return path
+
     def do_GET(self):
-        parsed = urlparse(self.path)
-        if parsed.path == "/api/drops":
+        if self.normalized_path == "/api/drops":
             self.handle_api()
-        elif parsed.path == "/":
+        elif self.normalized_path == "/":
             self.handle_index()
-        elif parsed.path in ("/static/style.css", "/static/sort.js"):
+        elif self.normalized_path in ("/static/style.css", "/static/sort.js"):
             self.handle_static()
         else:
             self.send_error(404, "Not Found")
