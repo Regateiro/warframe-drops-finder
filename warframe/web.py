@@ -121,21 +121,20 @@ class DropHandler(BaseHTTPRequestHandler):
             self.handle_api()
         elif self.normalized_path == "/":
             self.handle_index()
-        elif self.normalized_path in ("/static/style.css", "/static/sort.js"):
+        elif self.normalized_path in ("/static/style.css", "/static/sort.js", "/static/favicon.png"):
             self.handle_static()
-        elif self.normalized_path == "/favicon.ico" or self.path.endswith("/favicon.ico"):
-            self.handle_favicon()
         else:
             self.send_error(404, "Not Found")
 
-    def handle_favicon(self):
-        self.send_response(200)
-        self.send_header("Content-Type", "image/x-icon")
-        self.send_header("Content-Length", "0")
-        self.end_headers()
-
     def handle_static(self):
-        content_type = "text/css" if self.normalized_path.endswith(".css") else "application/javascript"
+        if self.normalized_path.endswith(".css"):
+            content_type = "text/css"
+        elif self.normalized_path.endswith(".js"):
+            content_type = "application/javascript"
+        elif self.normalized_path.endswith(".png"):
+            content_type = "image/png"
+        else:
+            content_type = "application/octet-stream"
         static_path = os.path.join(os.path.dirname(__file__), "static", os.path.basename(self.normalized_path))
         with open(static_path, "rb") as f:
             self.send_response(200)
