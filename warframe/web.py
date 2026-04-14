@@ -127,11 +127,11 @@ class DropHandler(BaseHTTPRequestHandler):
             self.send_error(404, "Not Found")
 
     def handle_static(self):
-        filename = "style.css" if self.path.endswith(".css") else "sort.js"
-        static_path = os.path.join(os.path.dirname(__file__), "static", filename)
+        content_type = "text/css" if self.normalized_path.endswith(".css") else "application/javascript"
+        static_path = os.path.join(os.path.dirname(__file__), "static", os.path.basename(self.normalized_path))
         with open(static_path, "rb") as f:
             self.send_response(200)
-            self.send_header("Content-Type", "text/css")
+            self.send_header("Content-Type", content_type)
             self.end_headers()
             self.wfile.write(f.read())
 
