@@ -123,8 +123,16 @@ class DropHandler(BaseHTTPRequestHandler):
             self.handle_index()
         elif self.normalized_path in ("/static/style.css", "/static/sort.js"):
             self.handle_static()
+        elif self.normalized_path == "/favicon.ico":
+            self.handle_favicon()
         else:
             self.send_error(404, "Not Found")
+
+    def handle_favicon(self):
+        self.send_response(200)
+        self.send_header("Content-Type", "image/x-icon")
+        self.send_header("Content-Length", "0")
+        self.end_headers()
 
     def handle_static(self):
         content_type = "text/css" if self.normalized_path.endswith(".css") else "application/javascript"
