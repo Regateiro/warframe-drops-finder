@@ -1,10 +1,13 @@
 import os
 from collections import defaultdict
 
+from dotenv import load_dotenv
 from flask import Flask, jsonify, request, send_from_directory
 
 from warframe.fetcher import fetch_drop_data, refresh_drop_data
 from warframe.iterators import search_items
+
+load_dotenv()
 
 app = Flask(__name__, template_folder="templates", static_folder="static")
 
