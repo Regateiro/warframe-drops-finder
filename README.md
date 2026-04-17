@@ -139,4 +139,7 @@ make lint
 
 # Start web server
 make serve
+
+# Deploy to server
+make deploy
 ```

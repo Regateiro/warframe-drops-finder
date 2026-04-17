@@ -10,6 +10,7 @@ poetry run <cmd>     # run command in venv
 - `make lint` — runs black, flake8, isort, pylint with line-length 150
 - `make test` — runs pytest with verbose output
 - `make serve` — runs the webserver
+- `make deploy` — deploys to production server
 
 ## Dependencies
 - Dev: black, flake8, isort, pylint, pytest
