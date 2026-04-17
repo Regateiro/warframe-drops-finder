@@ -13,4 +13,4 @@ serve:
 	poetry run python -m warframe.web
 
 deploy:
-	@ssh ovh "cd warframe-drops-finder && git pull && poetry install && systemctl restart warframe.service"
+	@ssh ovh "cd warframe-drops-finder && git pull && poetry install && pkill -f 'warframe.web' || true && sleep 1 && systemctl start warframe.service"
