@@ -55,7 +55,6 @@ async function loadSuggestions() {
         console.error('Failed to load suggestions:', e);
     }
 }
-}
 
 function toggleDrawer() {
     const drawer = document.getElementById('drawer');
