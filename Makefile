@@ -10,11 +10,13 @@ test:
 	poetry run pytest tests/ -v
 
 serve:
-	poetry run gunicorn -w 2 -b 127.0.0.1:8080 warframe.web:app
+	poetry run gunicorn -w 2 warframe.web:app
 
 install:
 	@echo "Run these commands on the server:"
 	@echo ""
+	@echo "  cd warframe-drops-finder"
+	@echo "  cp .env.example .env  # Edit .env with PORT=3333"
 	@echo "  cat << 'EOF' | sudo tee /etc/systemd/system/warframe.service"
 	@echo "  [Unit]"
 	@echo "  Description=Warframe Drops Finder Webserver"
@@ -22,7 +24,8 @@ install:
 	@echo "  [Service]"
 	@echo "  User=root"
 	@echo "  WorkingDirectory=/root/warframe-drops-finder"
-	@echo "  ExecStart=/root/.local/bin/poetry run gunicorn -w 2 -b 127.0.0.1:3333 warframe.web:app"
+	@echo "  Environment=\"WEB_ROOT=/warframe\""
+	@echo "  ExecStart=/root/.local/bin/poetry run gunicorn -w 2 warframe.web:app"
 	@echo "  Restart=always"
 	@echo ""
 	@echo "  [Install]"

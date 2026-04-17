@@ -286,7 +286,11 @@ def run_server(host=None, port=None):
         port = PORT
     print(f"Starting server on http://{host}:{port}")
     print("API endpoint: /api/drops?q=<query>")
-    app.run(host, port)
+    app.run(host=host, port=port)
+
+
+def create_app():
+    return app
 
 
 if __name__ == "__main__":
