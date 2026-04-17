@@ -5,7 +5,18 @@ document.addEventListener('DOMContentLoaded', () => {
             th.addEventListener('click', () => sortTable(table, idx));
         });
     });
+
+    const drawer = document.getElementById('drawer');
+    const missionTypeInput = drawer.querySelector('input[name="mission_type"]');
+    if (missionTypeInput && missionTypeInput.value.trim()) {
+        drawer.classList.add('open');
+    }
 });
+
+function toggleDrawer() {
+    const drawer = document.getElementById('drawer');
+    drawer.classList.toggle('open');
+}
 
 function sortTable(table, colIndex) {
     const tbody = table.tBodies[0];

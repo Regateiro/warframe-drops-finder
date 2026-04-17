@@ -1,7 +1,7 @@
 import argparse
 
 from .fetcher import fetch_drop_data
-from .formatters import format_multi_results, format_results
+from .formatters import format_multi_results
 from .iterators import search_items
 
 
@@ -39,10 +39,7 @@ def main() -> None:
 
     all_results = sorted(all_results, key=lambda x: x.chance, reverse=True)
 
-    if len(queries) > 1:
-        format_multi_results(all_results, queries=queries, max_results=args.num)
-    else:
-        format_results(all_results, max_results=args.num)
+    format_multi_results(all_results, queries=queries, max_results=args.num)
 
 
 if __name__ == "__main__":

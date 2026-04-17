@@ -16,9 +16,19 @@
     <form method="get" action="{web_root}/">
         <input type="text" name="q" placeholder="Search for an item..." value="{query}" autofocus>
         <input type="number" name="n" value="{num}" min="0" placeholder="Max">
-        <label><input type="checkbox" name="exact" {exact_checked}> Exact match</label>
         <button type="submit">Search</button>
+        <button type="button" class="btn-drawer" onclick="toggleDrawer()">Advanced</button>
     </form>
+    <div class="drawer" id="drawer">
+        <div class="drawer-content">
+            <label>
+                <input type="checkbox" name="exact" {exact_checked}> Exact match
+            </label>
+            <label>
+                <input type="text" name="mission_type" value="{mission_type}" placeholder="Mission type (e.g. Defense, Survival)">
+            </label>
+        </div>
+    </div>
     {results}
 </body>
 </html>

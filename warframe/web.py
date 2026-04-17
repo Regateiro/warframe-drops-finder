@@ -149,31 +149,34 @@ class DropHandler(BaseHTTPRequestHandler):
         num = int(params.get("n", ["0"])[0])
         exact = "exact" in params
         exact_checked = " checked" if exact else ""
+        mission_types = params.get("mission_type", [""])[0]
+
+        mission_types_filter = [mt.strip() for mt in mission_types.split(",") if mt.strip()]
 
         results_html = ""
         if query:
             data = refresh_drop_data() if refresh else fetch_drop_data()
             queries = parse_queries(query)
             all_results = run_search(data, query, exact=exact)
+
+            if mission_types_filter:
+                all_results = [r for r in all_results if r.mission_type.lower() in [mt.lower() for mt in mission_types_filter]]
+
             results = all_results[:num] if num > 0 else all_results
 
             if results:
-                if len(queries) > 1:
-                    results_html = format_multi_table_html(all_results, queries, num)
-                else:
-                    rows = "".join(
-                        f"<tr><td>{html_escape(r.item_name)}</td>"
-                        f'<td class="chance">{r.chance:.2f}%</td>'
-                        f"<td>{html_escape(r.location)}</td>"
-                        f"<td>{html_escape(r.mission_type)}</td>"
-                        f"<td>{html_escape(r.rotation)}</td></tr>"
-                        for r in results
-                    )
-                    results_html = RESULT_ROWS.format(count=len(results), rows=rows)
+                results_html = format_multi_table_html(all_results, queries, num)
             else:
                 results_html = NO_RESULTS.format(query=html_escape(query))
 
-        html = INDEX_HTML.format(web_root=WEB_ROOT, query=html_escape(query), num=num, exact_checked=exact_checked, results=results_html)
+        html = INDEX_HTML.format(
+            web_root=WEB_ROOT,
+            query=html_escape(query),
+            num=num,
+            exact_checked=exact_checked,
+            mission_type=html_escape(mission_types),
+            results=results_html,
+        )
 
         self.send_response(200)
         self.send_header("Content-Type", "text/html; charset=utf-8")
