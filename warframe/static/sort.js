@@ -24,23 +24,29 @@ async function loadSuggestions() {
     suggestionsLoaded = true;
 
     try {
-        const itemsRes = await fetch(WEB_ROOT + '/api/suggest-items?q=');
+        const itemsRes = await fetch(WEB_ROOT + '/api/suggest-items?q=' + new Date().getTime());
         const items = await itemsRes.json();
         const itemsList = document.getElementById('items-list');
         items.forEach(item => {
             const opt = document.createElement('option');
             opt.value = item;
+            opt.setAttribute('data-value', item);
             itemsList.appendChild(opt);
         });
+        window._itemSuggestions = items;
+        console.log('Loaded', items.length, 'item suggestions');
 
-        const missionTypesRes = await fetch(WEB_ROOT + '/api/suggest-mission-types?q=');
+        const missionTypesRes = await fetch(WEB_ROOT + '/api/suggest-mission-types?q=' + new Date().getTime());
         const missionTypes = await missionTypesRes.json();
         const missionTypesList = document.getElementById('mission-types-list');
         missionTypes.forEach(mt => {
             const opt = document.createElement('option');
             opt.value = mt;
+            opt.setAttribute('data-value', mt);
             missionTypesList.appendChild(opt);
         });
+        window._missionTypeSuggestions = missionTypes;
+        console.log('Loaded', missionTypes.length, 'mission type suggestions');
     } catch (e) {
         console.error('Failed to load suggestions:', e);
     }
