@@ -1,4 +1,4 @@
-.PHONY: lint test serve
+.PHONY: lint test serve install deploy
 
 lint:
 	poetry run black -l 150 warframe tests/test_droptables.py
@@ -12,5 +12,26 @@ test:
 serve:
 	poetry run gunicorn -w 2 -b 127.0.0.1:8080 warframe.web:app
 
+install:
+	@echo "Run these commands on the server:"
+	@echo ""
+	@echo "  cat << 'EOF' | sudo tee /etc/systemd/system/warframe.service"
+	@echo "  [Unit]"
+	@echo "  Description=Warframe Drops Finder Webserver"
+	@echo ""
+	@echo "  [Service]"
+	@echo "  User=root"
+	@echo "  WorkingDirectory=/root/warframe-drops-finder"
+	@echo "  ExecStart=/root/.local/bin/poetry run gunicorn -w 2 -b 127.0.0.1:3333 warframe.web:app"
+	@echo "  Restart=always"
+	@echo ""
+	@echo "  [Install]"
+	@echo "  WantedBy=multi-user.target"
+	@echo "  EOF"
+	@echo ""
+	@echo "  sudo systemctl daemon-reload"
+	@echo "  sudo systemctl enable warframe.service"
+	@echo "  sudo systemctl restart warframe.service"
+
 deploy:
-	ssh ovh "cd warframe-drops-finder && git pull && poetry install"
+	ssh ovh "cd warframe-drops-finder && git pull && poetry lock && poetry install"
