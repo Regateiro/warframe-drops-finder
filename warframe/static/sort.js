@@ -28,11 +28,17 @@ async function loadSuggestions() {
     const base = isApi ? '' : (window.WEB_ROOT || '');
 
     try {
-        const itemsRes = await fetch(base + '/api/suggest-items?q=');
+        const itemsUrl = base + '/api/suggest-items?q=';
+        console.log('Fetching items from:', itemsUrl);
+        const itemsRes = await fetch(itemsUrl);
+        console.log('itemsRes status:', itemsRes.status);
         if (!itemsRes.ok) {
             throw new Error('items failed: ' + itemsRes.status);
         }
-        const items = await itemsRes.json();
+        const itemsText = await itemsRes.text();
+        console.log('items raw:', itemsText.substring(0, 200));
+        const items = JSON.parse(itemsText);
+        console.log('items parsed:', items.length);
         const itemsList = document.getElementById('items-list');
         items.forEach(item => {
             const opt = document.createElement('option');
@@ -40,11 +46,17 @@ async function loadSuggestions() {
             itemsList.appendChild(opt);
         });
 
-        const missionTypesRes = await fetch(base + '/api/suggest-mission-types?q=');
+        const missionTypesUrl = base + '/api/suggest-mission-types?q=';
+        console.log('Fetching mission types from:', missionTypesUrl);
+        const missionTypesRes = await fetch(missionTypesUrl);
+        console.log('missionTypesRes status:', missionTypesRes.status);
         if (!missionTypesRes.ok) {
             throw new Error('mission types failed: ' + missionTypesRes.status);
         }
-        const missionTypes = await missionTypesRes.json();
+        const missionTypesText = await missionTypesRes.text();
+        console.log('mission types raw:', missionTypesText.substring(0, 200));
+        const missionTypes = JSON.parse(missionTypesText);
+        console.log('mission types parsed:', missionTypes.length);
         const missionTypesList = document.getElementById('mission-types-list');
         missionTypes.forEach(mt => {
             const opt = document.createElement('option');
