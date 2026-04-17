@@ -1,33 +1,18 @@
-import json
 import os
 from collections import defaultdict
-from html import escape as html_escape
-from http.server import BaseHTTPRequestHandler, HTTPServer
-from urllib.parse import parse_qs, urlparse
 
-from dotenv import load_dotenv
+from flask import Flask, jsonify, request, send_from_directory
 
-from .fetcher import fetch_drop_data, refresh_drop_data
-from .iterators import search_items
+from warframe.fetcher import fetch_drop_data, refresh_drop_data
+from warframe.iterators import search_items
 
-load_dotenv()
+app = Flask(__name__, template_folder="templates", static_folder="static")
 
 HOST = os.getenv("HOST", "127.0.0.1")
 PORT = int(os.getenv("PORT", "8080"))
 WEB_ROOT = os.getenv("WEB_ROOT", "/warframe")
 
-TEMPLATES_DIR = os.path.join(os.path.dirname(__file__), "templates")
-
-
-def load_template(name: str) -> str:
-    with open(os.path.join(TEMPLATES_DIR, name), "r") as f:
-        return f.read()
-
-
-INDEX_HTML = load_template("index.html")
-RESULT_ROWS = load_template("result_rows.html")
-MULTI_RESULT_TABLE = load_template("multi_result_table.html")
-NO_RESULTS = load_template("no_results.html")
+app.config["WEB_ROOT"] = WEB_ROOT
 
 
 def parse_queries(query: str) -> list[str]:
@@ -119,7 +104,7 @@ def strip_relic_for_display(name: str) -> str:
 
 
 def format_multi_table_html(results: list, queries: list[str], max_results: int) -> str:
-    by_location: dict = defaultdict(lambda: defaultdict(dict))
+    by_location = defaultdict(lambda: defaultdict(dict))
     for result in results:
         key = (result.location, result.mission_type)
         if result.rotation not in by_location[key][result.item_name] or by_location[key][result.item_name][result.rotation] < result.chance:
@@ -156,11 +141,11 @@ def format_multi_table_html(results: list, queries: list[str], max_results: int)
     else:
         item_columns = sorted(set(r.item_name for r in results))
 
-    headers = "".join(f"<th>{html_escape(strip_relic_for_display(item))}</th>" for item in item_columns)
+    headers = "".join(f"<th>{strip_relic_for_display(item)}</th>" for item in item_columns)
 
     rows = []
     for idx, ((location, mission_type), items_dict) in enumerate(sorted_locations if max_results == 0 else sorted_locations[:max_results], 1):
-        row_cells = f"<td>{idx}</td><td>{html_escape(location)}</td><td>{html_escape(mission_type)}</td>"
+        row_cells = f"<td>{idx}</td><td>{location}</td><td>{mission_type}</td>"
         for item in item_columns:
             if item in items_dict:
                 rotations = items_dict[item]
@@ -173,167 +158,132 @@ def format_multi_table_html(results: list, queries: list[str], max_results: int)
     row_html = "".join(rows)
     unique_locations = len(sorted_locations)
 
-    return MULTI_RESULT_TABLE.format(count=len(results), locations=unique_locations, headers=headers, rows=row_html)
+    return (
+        '<div class="table-wrapper">'
+        f'<div class="results-header"><span class="results-count">'
+        f"Found {len(results)} drops across {unique_locations} locations."
+        f" Showing best {max_results}:</span></div>"
+        '<table class="sortable"><thead><tr>'
+        "<th>#</th><th>Location</th><th>Type</th>" + headers + "</tr></thead><tbody>" + row_html + "</tbody></table></div>"
+    )
 
 
-class DropHandler(BaseHTTPRequestHandler):
-    @property
-    def normalized_path(self):
-        path = urlparse(self.path).path
-        if WEB_ROOT and path.startswith(WEB_ROOT):
-            path = path.removeprefix(WEB_ROOT)
-        return path
+INDEX_HTML = None
+MULTI_RESULT_TABLE = None
+NO_RESULTS = None
 
-    def do_GET(self):
-        if self.normalized_path == "/api/drops":
-            self.handle_api()
-        elif self.normalized_path == "/api/suggest-items":
-            self.handle_suggest_items()
-        elif self.normalized_path == "/api/suggest-mission-types":
-            self.handle_suggest_mission_types()
-        elif self.normalized_path == "/":
-            self.handle_index()
-        elif self.normalized_path in ("/static/style.css", "/static/sort.js", "/static/favicon.png"):
-            self.handle_static()
+
+@app.before_request
+def load_templates():
+    global INDEX_HTML, MULTI_RESULT_TABLE, NO_RESULTS
+    if INDEX_HTML is None:
+        with open(os.path.join(app.root_path, "templates", "index.html")) as f:
+            INDEX_HTML = f.read()
+        with open(os.path.join(app.root_path, "templates", "multi_result_table.html")) as f:
+            MULTI_RESULT_TABLE = f.read()
+        with open(os.path.join(app.root_path, "templates", "no_results.html")) as f:
+            NO_RESULTS = f.read()
+
+
+@app.route("/")
+def index():
+    refresh = "refresh" in request.args
+    query = request.args.get("q", "")
+    num = int(request.args.get("n", "0"))
+    exact = "exact" in request.args
+    exact_checked = " checked" if exact else ""
+    mission_types = request.args.get("mission_type", "")
+    mission_types_filter = [mt.strip() for mt in mission_types.split(",") if mt.strip()]
+
+    results_html = ""
+    if query:
+        data = refresh_drop_data() if refresh else fetch_drop_data()
+        queries = parse_queries(query)
+        all_results = run_search(data, query, exact=exact)
+
+        if mission_types_filter:
+            all_results = [r for r in all_results if r.mission_type.lower() in [mt.lower() for mt in mission_types_filter]]
+
+        results = all_results[:num] if num > 0 else all_results
+
+        if results:
+            results_html = format_multi_table_html(all_results, queries, num)
         else:
-            self.send_error(404, "Not Found")
+            results_html = NO_RESULTS.format(query=query)
 
-    def handle_static(self):
-        if self.normalized_path.endswith(".css"):
-            content_type = "text/css"
-        elif self.normalized_path.endswith(".js"):
-            content_type = "application/javascript"
-        elif self.normalized_path.endswith(".png"):
-            content_type = "image/png"
-        else:
-            content_type = "application/octet-stream"
-        static_path = os.path.join(os.path.dirname(__file__), "static", os.path.basename(self.normalized_path))
-        with open(static_path, "rb") as f:
-            self.send_response(200)
-            self.send_header("Content-Type", content_type)
-            self.end_headers()
-            self.wfile.write(f.read())
-
-    def handle_suggest_items(self):
-        parsed = urlparse(self.path)
-        prefix = parse_qs(parsed.query).get("q", [""])[0].lower()
-        data = fetch_drop_data()
-        items = get_items(data)
-        matches = [item for item in items if prefix in item.lower()][:10]
-        self.send_response(200)
-        self.send_header("Content-Type", "application/json")
-        self.end_headers()
-        self.wfile.write(json.dumps(matches).encode())
-
-    def handle_suggest_mission_types(self):
-        parsed = urlparse(self.path)
-        prefix = parse_qs(parsed.query).get("q", [""])[0].lower()
-        data = fetch_drop_data()
-        mission_types = get_mission_types(data)
-        matches = [mt for mt in mission_types if prefix in mt.lower()][:10]
-        self.send_response(200)
-        self.send_header("Content-Type", "application/json")
-        self.end_headers()
-        self.wfile.write(json.dumps(matches).encode())
-
-    def handle_index(self):
-        params = parse_qs(urlparse(self.path).query)
-        refresh = "refresh" in params
-        query = params.get("q", [""])[0]
-        num = int(params.get("n", ["0"])[0])
-        exact = "exact" in params
-        exact_checked = " checked" if exact else ""
-        mission_types = params.get("mission_type", [""])[0]
-
-        mission_types_filter = [mt.strip() for mt in mission_types.split(",") if mt.strip()]
-
-        results_html = ""
-        if query:
-            data = refresh_drop_data() if refresh else fetch_drop_data()
-            queries = parse_queries(query)
-            all_results = run_search(data, query, exact=exact)
-
-            if mission_types_filter:
-                all_results = [r for r in all_results if r.mission_type.lower() in [mt.lower() for mt in mission_types_filter]]
-
-            results = all_results[:num] if num > 0 else all_results
-
-            if results:
-                results_html = format_multi_table_html(all_results, queries, num)
-            else:
-                results_html = NO_RESULTS.format(query=html_escape(query))
-
-        html = INDEX_HTML.format(
-            web_root=WEB_ROOT,
-            query=html_escape(query),
-            num=num,
-            exact_checked=exact_checked,
-            mission_type=html_escape(mission_types),
-            results=results_html,
-        )
-
-        self.send_response(200)
-        self.send_header("Content-Type", "text/html; charset=utf-8")
-        self.end_headers()
-        self.wfile.write(html.encode())
-
-    def handle_api(self):
-        parsed = urlparse(self.path)
-        query = parse_qs(parsed.query).get("q", [""])[0]
-        if not query:
-            self.send_error(400, "Missing query parameter 'q'")
-            return
-
-        exact = "exact" in parse_qs(parsed.query)
-        mission_types = parse_qs(parsed.query).get("mission_type", [])
-        max_results = int(parse_qs(parsed.query).get("n", ["0"])[0])
-
-        data = fetch_drop_data()
-        results = run_search(data, query, exact=exact)
-
-        if mission_types:
-            results = [r for r in results if r.mission_type.lower() in [mt.lower() for mt in mission_types]]
-
-        results = results[:max_results] if max_results > 0 else results
-
-        output = [
-            {
-                "item_name": r.item_name,
-                "chance": r.chance,
-                "location": r.location,
-                "mission_type": r.mission_type,
-                "rotation": r.rotation,
-            }
-            for r in results
-        ]
-
-        self.send_response(200)
-        self.send_header("Content-Type", "application/json")
-        self.end_headers()
-        self.wfile.write(json.dumps(output).encode())
-
-    def log_message(self, format, *args):
-        print(f"[{self.log_date_time_string()}] {format % args}")
+    html = INDEX_HTML.format(
+        web_root=app.config["WEB_ROOT"],
+        query=query,
+        num=num,
+        exact_checked=exact_checked,
+        mission_type=mission_types,
+        results=results_html,
+    )
+    return html
 
 
-def run_server(host: str = None, port: int = None):
+@app.route("/api/drops")
+def api_drops():
+    query = request.args.get("q", "")
+    if not query:
+        return jsonify(error="Missing query parameter 'q'"), 400
+
+    exact = "exact" in request.args
+    mission_types = request.args.getlist("mission_type")
+    max_results = int(request.args.get("n", "0"))
+
+    data = fetch_drop_data()
+    results = run_search(data, query, exact=exact)
+
+    if mission_types:
+        results = [r for r in results if r.mission_type.lower() in [mt.lower() for mt in mission_types]]
+
+    results = results[:max_results] if max_results > 0 else results
+
+    output = [
+        {
+            "item_name": r.item_name,
+            "chance": r.chance,
+            "location": r.location,
+            "mission_type": r.mission_type,
+            "rotation": r.rotation,
+        }
+        for r in results
+    ]
+    return jsonify(output)
+
+
+@app.route("/api/suggest-items")
+def suggest_items():
+    prefix = request.args.get("q", "").lower()
+    data = fetch_drop_data()
+    items = get_items(data)
+    matches = [item for item in items if prefix in item.lower()][:10]
+    return jsonify(matches)
+
+
+@app.route("/api/suggest-mission-types")
+def suggest_mission_types():
+    prefix = request.args.get("q", "").lower()
+    data = fetch_drop_data()
+    mission_types = get_mission_types(data)
+    matches = [mt for mt in mission_types if prefix in mt.lower()][:10]
+    return jsonify(matches)
+
+
+@app.route("/static/<path:filename>")
+def static_file(filename):
+    return send_from_directory(app.static_folder, filename)
+
+
+def run_server(host=None, port=None):
     if host is None:
         host = HOST
     if port is None:
         port = PORT
-    server = HTTPServer((host, port), DropHandler)
     print(f"Starting server on http://{host}:{port}")
     print("API endpoint: /api/drops?q=<query>")
-    print("Parameters:")
-    print("  q - Item name to search for (required)")
-    print("  exact - Match exactly (optional)")
-    print("  mission_type - Filter by mission type (repeatable)")
-    print("  n - Max results (default: 0 for all)")
-    try:
-        server.serve_forever()
-    except KeyboardInterrupt:
-        print("\nShutting down server...")
-        server.shutdown()
+    app.run(host, port)
 
 
 if __name__ == "__main__":
