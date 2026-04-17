@@ -10,7 +10,7 @@ test:
 	poetry run pytest tests/ -v
 
 serve:
-	poetry run python -m warframe.web
+	poetry run python -m warframe.app
 
 deploy:
 	@ssh ovh "cd warframe-drops-finder && git pull && poetry install && systemctl restart warframe.service"
