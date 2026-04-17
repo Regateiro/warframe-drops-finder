@@ -24,7 +24,7 @@ async function loadSuggestions() {
     suggestionsLoaded = true;
 
     try {
-        const itemsRes = await fetch('/api/suggest-items?q=');
+        const itemsRes = await fetch(WEB_ROOT + '/api/suggest-items?q=');
         const items = await itemsRes.json();
         const itemsList = document.getElementById('items-list');
         items.forEach(item => {
@@ -33,7 +33,7 @@ async function loadSuggestions() {
             itemsList.appendChild(opt);
         });
 
-        const missionTypesRes = await fetch('/api/suggest-mission-types?q=');
+        const missionTypesRes = await fetch(WEB_ROOT + '/api/suggest-mission-types?q=');
         const missionTypes = await missionTypesRes.json();
         const missionTypesList = document.getElementById('mission-types-list');
         missionTypes.forEach(mt => {
