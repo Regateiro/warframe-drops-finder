@@ -34,6 +34,74 @@ def parse_queries(query: str) -> list[str]:
     return [q.strip() for q in query.split(",") if q.strip()]
 
 
+def get_unique_items(data: dict) -> list[str]:
+    items = set()
+    for missions in data.get("missionRewards", {}).values():
+        for details in missions.values():
+            rewards = details.get("rewards", {})
+            if isinstance(rewards, dict):
+                for tier_list in rewards.values():
+                    for item in tier_list:
+                        items.add(item.get("itemName", ""))
+            elif isinstance(rewards, list):
+                for item in rewards:
+                    items.add(item.get("itemName", ""))
+    for relic in data.get("relics", []):
+        for reward in relic.get("rewards", []):
+            items.add(reward.get("itemName", ""))
+    for mod_loc in data.get("modLocations", []):
+        items.add(mod_loc.get("modName", ""))
+    for bp_loc in data.get("blueprintLocations", []):
+        items.add(bp_loc.get("blueprintName", bp_loc.get("itemName", "")))
+        items.add(bp_loc.get("itemName", ""))
+    for key in data.get("keyRewards", []):
+        rewards = key.get("rewards", {})
+        if isinstance(rewards, dict):
+            for tier_list in rewards.values():
+                for item in tier_list:
+                    items.add(item.get("itemName", ""))
+    for transient in data.get("transientRewards", []):
+        for reward in transient.get("rewards", []):
+            items.add(reward.get("itemName", ""))
+    for reward in data.get("sortieRewards", []):
+        items.add(reward.get("itemName", ""))
+    for bounty in data.get("cetusBountyRewards", []):
+        rewards = bounty.get("rewards", {})
+        if isinstance(rewards, dict):
+            for tier_list in rewards.values():
+                for item in tier_list:
+                    items.add(item.get("itemName", ""))
+    return sorted(items)
+
+
+def get_unique_mission_types(data: dict) -> list[str]:
+    mission_types = set()
+    for missions in data.get("missionRewards", {}).values():
+        for details in missions.values():
+            game_mode = details.get("gameMode", "")
+            if game_mode:
+                mission_types.add(game_mode)
+    return sorted(mission_types)
+
+
+_items_cache = None
+_mission_types_cache = None
+
+
+def get_items(data: dict) -> list[str]:
+    global _items_cache
+    if _items_cache is None:
+        _items_cache = get_unique_items(data)
+    return _items_cache
+
+
+def get_mission_types(data: dict) -> list[str]:
+    global _mission_types_cache
+    if _mission_types_cache is None:
+        _mission_types_cache = get_unique_mission_types(data)
+    return _mission_types_cache
+
+
 def run_search(data: dict, query: str, exact: bool) -> list:
     queries = parse_queries(query)
     results = []
@@ -119,6 +187,10 @@ class DropHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         if self.normalized_path == "/api/drops":
             self.handle_api()
+        elif self.normalized_path == "/api/suggest-items":
+            self.handle_suggest_items()
+        elif self.normalized_path == "/api/suggest-mission-types":
+            self.handle_suggest_mission_types()
         elif self.normalized_path == "/":
             self.handle_index()
         elif self.normalized_path in ("/static/style.css", "/static/sort.js", "/static/favicon.png"):
@@ -141,6 +213,28 @@ class DropHandler(BaseHTTPRequestHandler):
             self.send_header("Content-Type", content_type)
             self.end_headers()
             self.wfile.write(f.read())
+
+    def handle_suggest_items(self):
+        parsed = urlparse(self.path)
+        prefix = parse_qs(parsed.query).get("q", [""])[0].lower()
+        data = fetch_drop_data()
+        items = get_items(data)
+        matches = [item for item in items if prefix in item.lower()][:10]
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.end_headers()
+        self.wfile.write(json.dumps(matches).encode())
+
+    def handle_suggest_mission_types(self):
+        parsed = urlparse(self.path)
+        prefix = parse_qs(parsed.query).get("q", [""])[0].lower()
+        data = fetch_drop_data()
+        mission_types = get_mission_types(data)
+        matches = [mt for mt in mission_types if prefix in mt.lower()][:10]
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.end_headers()
+        self.wfile.write(json.dumps(matches).encode())
 
     def handle_index(self):
         params = parse_qs(urlparse(self.path).query)

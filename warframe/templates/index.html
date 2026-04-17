@@ -14,7 +14,8 @@
         <a class="btn" href="{web_root}/?refresh=1&q={query}">Refresh Data</a>
     </div>
     <form method="get" action="{web_root}/">
-        <input type="text" name="q" placeholder="Search for an item..." value="{query}" autofocus>
+        <input type="text" name="q" placeholder="Search for an item..." value="{query}" list="items-list" autofocus>
+        <datalist id="items-list"></datalist>
         <input type="number" name="n" value="{num}" min="0" placeholder="Max">
         <button type="submit">Search</button>
         <button type="button" class="btn-drawer" onclick="toggleDrawer()">Advanced</button>
@@ -22,8 +23,9 @@
             <div class="drawer-content">
                 <label>
                     Mission Type Filter:
-                    <input type="text" name="mission_type" value="{mission_type}" placeholder="Mission type (e.g. Defense, Survival)">
+                    <input type="text" name="mission_type" value="{mission_type}" placeholder="Mission type (e.g. Defense, Survival)" list="mission-types-list">
                 </label>
+                <datalist id="mission-types-list"></datalist>
                 <label>
                     <input type="checkbox" name="exact" {exact_checked}> Exact match
                 </label>

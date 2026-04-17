@@ -13,7 +13,38 @@ document.addEventListener('DOMContentLoaded', () => {
     } else if (localStorage.getItem('drawerOpen') === 'true') {
         drawer.classList.add('open');
     }
+
+    loadSuggestions();
 });
+
+let suggestionsLoaded = false;
+
+async function loadSuggestions() {
+    if (suggestionsLoaded) return;
+    suggestionsLoaded = true;
+
+    try {
+        const itemsRes = await fetch('/api/suggest-items?q=');
+        const items = await itemsRes.json();
+        const itemsList = document.getElementById('items-list');
+        items.forEach(item => {
+            const opt = document.createElement('option');
+            opt.value = item;
+            itemsList.appendChild(opt);
+        });
+
+        const missionTypesRes = await fetch('/api/suggest-mission-types?q=');
+        const missionTypes = await missionTypesRes.json();
+        const missionTypesList = document.getElementById('mission-types-list');
+        missionTypes.forEach(mt => {
+            const opt = document.createElement('option');
+            opt.value = mt;
+            missionTypesList.appendChild(opt);
+        });
+    } catch (e) {
+        console.error('Failed to load suggestions:', e);
+    }
+}
 
 function toggleDrawer() {
     const drawer = document.getElementById('drawer');
