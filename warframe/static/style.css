@@ -166,3 +166,6 @@ td.chance {
     flex-wrap: wrap;
     align-items: center;
 }
+.drawer-content input[type="text"] {
+    min-width: 250px;
+}
