@@ -10,12 +10,15 @@ document.addEventListener('DOMContentLoaded', () => {
     const missionTypeInput = drawer.querySelector('input[name="mission_type"]');
     if (missionTypeInput && missionTypeInput.value.trim()) {
         drawer.classList.add('open');
+    } else if (localStorage.getItem('drawerOpen') === 'true') {
+        drawer.classList.add('open');
     }
 });
 
 function toggleDrawer() {
     const drawer = document.getElementById('drawer');
     drawer.classList.toggle('open');
+    localStorage.setItem('drawerOpen', drawer.classList.contains('open'));
 }
 
 function sortTable(table, colIndex) {

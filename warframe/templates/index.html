@@ -18,18 +18,18 @@
         <input type="number" name="n" value="{num}" min="0" placeholder="Max">
         <button type="submit">Search</button>
         <button type="button" class="btn-drawer" onclick="toggleDrawer()">Advanced</button>
-    </form>
-    <div class="drawer" id="drawer">
-        <div class="drawer-content">
-            <label>
-                Mission Type Filter:
-                <input type="text" name="mission_type" value="{mission_type}" placeholder="Mission type (e.g. Defense, Survival)">
-            </label>
-            <label>
-                <input type="checkbox" name="exact" {exact_checked}> Exact match
-            </label>
+        <div class="drawer" id="drawer">
+            <div class="drawer-content">
+                <label>
+                    Mission Type Filter:
+                    <input type="text" name="mission_type" value="{mission_type}" placeholder="Mission type (e.g. Defense, Survival)">
+                </label>
+                <label>
+                    <input type="checkbox" name="exact" {exact_checked}> Exact match
+                </label>
+            </div>
         </div>
-    </div>
+    </form>
     {results}
 </body>
 </html>
