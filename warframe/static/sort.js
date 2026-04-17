@@ -23,8 +23,15 @@ async function loadSuggestions() {
     if (suggestionsLoaded) return;
     suggestionsLoaded = true;
 
+    const path = window.location.pathname;
+    const isApi = path.startsWith('/api');
+    const base = isApi ? '' : (window.WEB_ROOT || '');
+
     try {
-        const itemsRes = await fetch('/api/suggest-items?q=');
+        const itemsRes = await fetch(base + '/api/suggest-items?q=');
+        if (!itemsRes.ok) {
+            throw new Error('items failed: ' + itemsRes.status);
+        }
         const items = await itemsRes.json();
         const itemsList = document.getElementById('items-list');
         items.forEach(item => {
@@ -33,7 +40,10 @@ async function loadSuggestions() {
             itemsList.appendChild(opt);
         });
 
-        const missionTypesRes = await fetch('/api/suggest-mission-types?q=');
+        const missionTypesRes = await fetch(base + '/api/suggest-mission-types?q=');
+        if (!missionTypesRes.ok) {
+            throw new Error('mission types failed: ' + missionTypesRes.status);
+        }
         const missionTypes = await missionTypesRes.json();
         const missionTypesList = document.getElementById('mission-types-list');
         missionTypes.forEach(mt => {
@@ -44,6 +54,7 @@ async function loadSuggestions() {
     } catch (e) {
         console.error('Failed to load suggestions:', e);
     }
+}
 }
 
 function toggleDrawer() {
