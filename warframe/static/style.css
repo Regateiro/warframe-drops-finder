@@ -152,7 +152,8 @@ td.chance {
 }
 .drawer {
     display: none;
-    margin-bottom: 1rem;
+    flex-basis: 100%;
+    margin-top: 0.5rem;
     padding: 1rem;
     background: #222;
     border-radius: 4px;
