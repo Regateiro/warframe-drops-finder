@@ -6,6 +6,7 @@ function setupAutocomplete(input, api, onSelect) {
     wrap.style.position = 'relative';
     wrap.style.flex = '1';
     wrap.style.minWidth = '200px';
+    wrap.style.width = '100%';
     input.parentNode.insertBefore(wrap, input);
     wrap.appendChild(input);
 
