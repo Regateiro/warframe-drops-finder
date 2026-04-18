@@ -1,5 +1,14 @@
 function setupAutocomplete(input, api, onSelect) {
     input.setAttribute('autocomplete', 'off');
+
+    const wrap = document.createElement('div');
+    wrap.className = 'autocomplete-wrap';
+    wrap.style.position = 'relative';
+    wrap.style.flex = '1';
+    wrap.style.minWidth = '200px';
+    wrap.style.width = 'calc(100% - 320px)';
+    input.parentNode.insertBefore(wrap, input);
+    wrap.appendChild(input);
     input.style.width = '100%';
 
     const dropdown = document.createElement('ul');
