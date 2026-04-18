@@ -48,7 +48,7 @@ function setupAutocomplete(input, api, onSelect) {
             };
             li.onmousedown = (e) => {
                 e.preventDefault();
-                select(item);
+                select(item, false);
             };
             dropdown.appendChild(li);
         });
@@ -82,7 +82,21 @@ function setupAutocomplete(input, api, onSelect) {
 
     input.addEventListener('blur', () => setTimeout(() => dropdown.style.display = 'none', 150));
     input.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+            const items = Array.from(dropdown.children);
+            let idx = items.findIndex(li => li.style.background !== '');
+            if (idx >= 0) {
+                e.preventDefault();
+                select(items[idx].textContent, false);
+            }
+            return;
+        }
+        if (e.key === 'Escape') {
+            dropdown.style.display = 'none';
+            return;
+        }
         const items = Array.from(dropdown.children);
+        if (!items.length) return;
         let idx = items.findIndex(li => li.style.background !== '');
         if (e.key === 'ArrowDown') {
             e.preventDefault();
@@ -90,14 +104,6 @@ function setupAutocomplete(input, api, onSelect) {
         } else if (e.key === 'ArrowUp') {
             e.preventDefault();
             idx = idx < 0 ? items.length - 1 : Math.max(idx - 1, 0);
-        } else if (e.key === 'Enter') {
-            e.preventDefault();
-            if (idx >= 0) {
-                select(items[idx].textContent, false);
-            } else {
-                input.form.submit();
-            }
-            return;
         } else return;
         items.forEach(li => li.style.background = '');
         if (items[idx]) {
