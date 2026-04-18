@@ -316,22 +316,14 @@ def static_file(filename):
     return send_from_directory(app.static_folder, filename)
 
 
-def run_server(host=None, port=None):
+def run_server(host=HOST, port=PORT):
     """Run development server.
     Uses Flask dev server (not for production).
     For production use: gunicorn warframe.web:app
     """
-    if host is None:
-        host = HOST
-    if port is None:
-        port = PORT
     print(f"Starting server on http://{host}:{port}")
     print("API endpoint: /api/drops?q=<query>")
     app.run(host=host, port=port)
-
-
-def create_app():
-    return app
 
 
 if __name__ == "__main__":
