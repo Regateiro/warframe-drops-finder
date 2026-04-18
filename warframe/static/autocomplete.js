@@ -4,6 +4,8 @@ function setupAutocomplete(input, api, onSelect) {
     const wrap = document.createElement('div');
     wrap.className = 'autocomplete-wrap';
     wrap.style.position = 'relative';
+    wrap.style.flex = '1';
+    wrap.style.minWidth = '200px';
     input.parentNode.insertBefore(wrap, input);
     wrap.appendChild(input);
 
