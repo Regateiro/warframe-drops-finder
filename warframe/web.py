@@ -186,7 +186,7 @@ def index():
     exact = "exact" in request.args
     exact_checked = " checked" if exact else ""
     mission_types = request.args.get("mission_type", "")
-    mission_types_filter = [mt.strip() for mt in mission_types.split(",") if mt.strip()]
+    mission_types_filter = [mt.strip() for mt in mission_types.split(",")]
 
     results_html = ""
     if query:
