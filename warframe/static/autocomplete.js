@@ -165,8 +165,8 @@ function sortTable(table, col) {
     // Get the header cell for the clicked column
     const th = table.querySelectorAll('th')[col];
 
-    // Cycle through states: unsorted -> asc -> desc -> unsorted
-    let state = th.classList.contains('asc') ? 'desc' : th.classList.contains('desc') ? 'unsorted' : 'asc';
+    // Cycle through states: unsorted -> desc -> asc -> unsorted
+    let state = th.classList.contains('desc') ? 'asc' : th.classList.contains('asc') ? 'unsorted' : 'desc';
 
     // Clear existing sort classes
     table.querySelectorAll('th').forEach(h => h.classList.remove('asc', 'desc'));
