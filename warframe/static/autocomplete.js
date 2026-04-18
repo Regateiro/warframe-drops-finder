@@ -1,150 +1,98 @@
-function setupAutocomplete(input, api, onSelect) {
-    input.setAttribute('autocomplete', 'off');
+const DROPDOWN_STYLE = 'position:absolute;top:100%;left:0;right:0;background:#2a2a2a;border:1px solid #444;border-top:none;list-style:none;margin:0;padding:0;max-height:250px;overflow-y:auto;z-index:1000;display:none';
+const ITEM_STYLE = 'padding:0.5rem 0.75rem;cursor:pointer;color:#fff';
 
-    const wrap = document.createElement('div');
-    wrap.className = 'autocomplete-wrap';
-    wrap.style.position = 'relative';
-    wrap.style.flex = '1';
-    wrap.style.minWidth = '200px';
-    wrap.style.width = 'calc(100% - 320px)';
-    input.parentNode.insertBefore(wrap, input);
-    wrap.appendChild(input);
-    input.style.width = '100%';
+function setupAutocomplete(input, api) {
+    input.autocomplete = 'off';
+    let controller = null;
 
     const dropdown = document.createElement('ul');
-    dropdown.className = 'autocomplete-dropdown';
-    dropdown.style.cssText = 'position:absolute;top:100%;left:0;right:0;background:#2a2a2a;border:1px solid #444;border-top:none;list-style:none;margin:0;padding:0;max-height:250px;overflow-y:auto;z-index:1000;display:none';
-    wrap.appendChild(dropdown);
+    dropdown.style.cssText = DROPDOWN_STYLE;
+    input.parentNode.appendChild(dropdown);
 
-    let currentController = null;
-
-    async function search(query) {
-        if (currentController) currentController.abort();
-        currentController = new AbortController();
-
-        try {
-            const url = api + encodeURIComponent(query);
-            const res = await fetch(url, { signal: currentController.signal });
-            const items = await res.json();
-            render(items);
-        } catch (e) {
-            if (e.name !== 'AbortError') console.error('Autocomplete error:', e);
-        }
+    function search(query) {
+        if (controller) controller.abort();
+        controller = new AbortController();
+        fetch(api + encodeURIComponent(query), { signal: controller.signal })
+            .then(r => r.json())
+            .then(show)
+            .catch(e => { if (e.name !== 'AbortError') console.error(e); });
     }
 
-    function render(items) {
-        dropdown.innerHTML = '';
-        if (!items.length) {
-            dropdown.style.display = 'none';
-            return;
-        }
+    function show(items) {
+        dropdown.innerHTML = items.length ? '' : (dropdown.style.display = 'none');
         items.forEach(item => {
             const li = document.createElement('li');
             li.textContent = item;
-            li.style.cssText = 'padding:0.5rem 0.75rem;cursor:pointer;color:#fff';
-            li.onmouseover = () => {
-                Array.from(dropdown.children).forEach(c => c.style.background = '');
-                li.style.background = '#444';
-            };
-            li.onmousedown = (e) => {
-                e.preventDefault();
-                select(item, false);
-            };
+            li.style.cssText = ITEM_STYLE;
+            li.onmouseover = () => highlight(li);
+            li.onmousedown = (e) => { e.preventDefault(); select(item, false); };
             dropdown.appendChild(li);
         });
-        dropdown.style.display = 'block';
+        if (items.length) dropdown.style.display = 'block';
     }
 
-    function select(value, shouldSubmit = true) {
-        let current = input.value;
-        const lastComma = current.lastIndexOf(',');
-        if (lastComma >= 0) {
-            input.value = current.slice(0, lastComma + 1).trim() + ' ' + value;
-        } else {
-            input.value = value;
-        }
+    function highlight(li) {
+        Array.from(dropdown.children).forEach(c => c.style.background = '');
+        li.style.background = '#444';
+    }
+
+    function select(value, doSubmit = true) {
+        const last = input.value.lastIndexOf(',');
+        input.value = last >= 0 ? input.value.slice(0, last + 1).trim() + ' ' + value : value;
         dropdown.style.display = 'none';
-        if (shouldSubmit && onSelect) onSelect(value);
+        if (doSubmit) input.form.submit();
     }
 
-    let debounceTimer;
-    input.addEventListener('input', () => {
-        clearTimeout(debounceTimer);
-        let query = input.value.trim();
-        const lastComma = query.lastIndexOf(',');
-        if (lastComma >= 0) query = query.slice(lastComma + 1).trim();
-        if (query.length < 1) {
-            dropdown.style.display = 'none';
-            return;
-        }
-        debounceTimer = setTimeout(() => search(query), 150);
-    });
+    function handleInput() {
+        let q = input.value.trim();
+        const last = q.lastIndexOf(',');
+        q = last >= 0 ? q.slice(last + 1).trim() : q;
+        if (!q) return dropdown.style.display = 'none';
+        clearTimeout(input._timer);
+        input._timer = setTimeout(() => search(q), 150);
+    }
 
-    input.addEventListener('blur', () => setTimeout(() => dropdown.style.display = 'none', 150));
-    input.addEventListener('keydown', (e) => {
+    function handleKey(e) {
+        const items = Array.from(dropdown.children);
         if (e.key === 'Enter') {
-            const isOpen = dropdown.style.display === 'block';
-            const items = Array.from(dropdown.children);
-            let idx = isOpen ? items.findIndex(li => li.style.background !== '') : -1;
-            if (idx >= 0) {
-                e.preventDefault();
-                select(items[idx].textContent, false);
-            } else if (!isOpen || items.length === 0) {
-                e.preventDefault();
-                input.form.submit();
+            if (items.length && dropdown.style.display === 'block') {
+                const idx = items.findIndex(li => li.style.background !== '');
+                if (idx >= 0) { e.preventDefault(); select(items[idx].textContent, false); }
             }
             return;
         }
-        if (e.key === 'Escape') {
-            dropdown.style.display = 'none';
-            return;
-        }
-        const items = Array.from(dropdown.children);
-        if (!items.length) return;
+        if (e.key === 'Escape') { dropdown.style.display = 'none'; return; }
+        if (!items.length || dropdown.style.display !== 'block') return;
+
         let idx = items.findIndex(li => li.style.background !== '');
-        if (e.key === 'ArrowDown') {
-            e.preventDefault();
-            idx = idx < 0 ? 0 : Math.min(idx + 1, items.length - 1);
-        } else if (e.key === 'ArrowUp') {
-            e.preventDefault();
-            idx = idx < 0 ? items.length - 1 : Math.max(idx - 1, 0);
-        } else return;
+        if (e.key === 'ArrowDown') idx = idx < 0 ? 0 : Math.min(idx + 1, items.length - 1);
+        else if (e.key === 'ArrowUp') idx = idx < 0 ? items.length - 1 : Math.max(idx - 1, 0);
+        else return;
+        e.preventDefault();
         items.forEach(li => li.style.background = '');
-        if (items[idx]) {
-            items[idx].style.background = '#444';
-            items[idx].scrollIntoView({ block: 'nearest' });
-        }
-    });
+        items[idx] && (items[idx].style.background = '#444');
+    }
+
+    input.addEventListener('input', handleInput);
+    input.addEventListener('blur', () => setTimeout(() => dropdown.style.display = 'none', 150));
+    input.addEventListener('keydown', handleKey);
 }
 
 document.addEventListener('DOMContentLoaded', () => {
     const qInput = document.querySelector('input[name="q"]');
-    if (qInput) {
-        setupAutocomplete(qInput, WEB_ROOT + '/api/suggest-items?q=', (item) => {
-            qInput.form.submit();
-        });
-    }
+    if (qInput) setupAutocomplete(qInput, WEB_ROOT + '/api/suggest-items?q=');
 
     const drawer = document.getElementById('drawer');
     const mtInput = drawer?.querySelector('input[name="mission_type"]');
-    if (mtInput) {
-        setupAutocomplete(mtInput, WEB_ROOT + '/api/suggest-mission-types?q=', () => {
-            mtInput.form.submit();
-        });
-    }
+    if (mtInput) setupAutocomplete(mtInput, WEB_ROOT + '/api/suggest-mission-types?q=');
 
     document.querySelectorAll('table.sortable').forEach(table => {
-        table.querySelectorAll('th').forEach((th, idx) => {
-            th.style.cursor = 'pointer';
-            th.addEventListener('click', () => sortTable(table, idx));
-        });
+        table.querySelectorAll('th').forEach((th, i) => th.onclick = () => sortTable(table, i));
     });
 
-    const missionTypeInput = drawer?.querySelector('input[name="mission_type"]');
-    if (missionTypeInput?.value.trim()) {
-        drawer.classList.add('open');
-    } else if (localStorage.getItem('drawerOpen') === 'true') {
-        drawer?.classList.add('open');
+    if (drawer) {
+        const open = mtInput?.value.trim() || localStorage.getItem('drawerOpen') === 'true';
+        if (open) drawer.classList.add('open');
     }
 });
 
@@ -154,33 +102,21 @@ function toggleDrawer() {
     localStorage.setItem('drawerOpen', drawer.classList.contains('open'));
 }
 
-function sortTable(table, colIndex) {
+function sortTable(table, col) {
     const tbody = table.tBodies[0];
     const rows = Array.from(tbody.querySelectorAll('tr'));
-    const th = table.querySelectorAll('th')[colIndex];
-
-    let state;
-    if (th.classList.contains('asc')) state = 'desc';
-    else if (th.classList.contains('desc')) state = 'unsorted';
-    else state = 'asc';
-
+    const th = table.querySelectorAll('th')[col];
+    let state = th.classList.contains('asc') ? 'desc' : th.classList.contains('desc') ? 'unsorted' : 'asc';
     table.querySelectorAll('th').forEach(h => h.classList.remove('asc', 'desc'));
     if (state !== 'unsorted') th.classList.add(state);
-
     const header = rows.shift();
-    if (state === 'unsorted') {
-        rows.unshift(header);
-        rows.forEach(row => tbody.appendChild(row));
-    } else {
-        const asc = state === 'asc';
-        rows.sort((a, b) => {
-            const aVal = a.cells[colIndex].textContent.trim();
-            const bVal = b.cells[colIndex].textContent.trim();
-            const aNum = parseFloat(aVal), bNum = parseFloat(bVal);
-            if (!isNaN(aNum) && !isNaN(bNum)) return asc ? aNum - bNum : bNum - aNum;
-            return asc ? aVal.localeCompare(bVal) : bVal.localeCompare(aVal);
-        });
-        rows.unshift(header);
-        rows.forEach(row => tbody.appendChild(row));
-    }
+    if (state === 'unsorted') { rows.unshift(header); rows.forEach(r => tbody.appendChild(r)); return; }
+    rows.sort((a, b) => {
+        const av = a.cells[col].textContent.trim(), bv = b.cells[col].textContent.trim();
+        const an = parseFloat(av), bn = parseFloat(bv);
+        return isNaN(an) || isNaN(bn)
+            ? (state === 'asc' ? av.localeCompare(bv) : bv.localeCompare(av))
+            : (state === 'asc' ? an - bn : bn - an);
+    });
+    rows.unshift(header); rows.forEach(r => tbody.appendChild(r));
 }
