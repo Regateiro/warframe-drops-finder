@@ -23,16 +23,21 @@ async function loadMissionTypeSuggestions() {
     if (suggestionsLoaded) return;
     suggestionsLoaded = true;
 
+    console.log('Loading mission type suggestions...');
+    const missionTypesList = document.getElementById('mission-types-list');
+    console.log('datalist element:', missionTypesList);
+
     try {
         const missionTypesRes = await fetch(WEB_ROOT + '/api/suggest-mission-types?q=' + Date.now());
+        console.log('response status:', missionTypesRes.status);
         const missionTypes = await missionTypesRes.json();
-        const missionTypesList = document.getElementById('mission-types-list');
+        console.log('got mission types:', missionTypes);
         missionTypes.forEach(mt => {
             const opt = document.createElement('option');
             opt.value = mt;
             missionTypesList.appendChild(opt);
         });
-        console.log('Loaded', missionTypes.length, 'mission type suggestions');
+        console.log('Populated datalist with', missionTypes.length, 'items');
     } catch (e) {
         console.error('Failed to load mission type suggestions:', e);
     }
