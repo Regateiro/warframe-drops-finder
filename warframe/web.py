@@ -186,11 +186,11 @@ def format_multi_table_html(results: list, queries: list[str], max_results: int)
     unique_locations = len(sorted_locations)
 
     # Build complete HTML with header and table
-    results_header = (
-        '<div class="results-header"><span class="results-count">'
-        f"Found {len(results)} drops across {unique_locations} locations."
-        f" Showing best {max_results}:</span></div>"
-    )
+    results_header = f'<div class="results-header"><span class="results-count">Found {len(results)} drops across {unique_locations} locations'
+    if max_results > 0:
+        results_header += f". Showing best {max_results}"
+    results_header += ":</span></div>"
+
     table_html = (
         '<table class="sortable"><thead><tr>'
         "<th>#</th><th>Location</th><th>Type</th>" + headers + "</tr></thead><tbody>" + row_html + "</tbody></table></div>"
