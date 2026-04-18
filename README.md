@@ -61,7 +61,7 @@ make serve
 Or directly:
 
 ```bash
-poetry run python -m warframe.web
+poetry run gunicorn -w 2 warframe.web:app
 ```
 
 The server starts on `http://localhost:8080` by default.
@@ -90,6 +90,8 @@ cp .env.example .env
 
 ```
 GET /api/drops?q=<query>&exact=<bool>&mission_type=<type>&n=<count>
+GET /api/suggest-items?q=<prefix>
+GET /api/suggest-mission-types?q=<prefix>
 ```
 
 #### Parameters
