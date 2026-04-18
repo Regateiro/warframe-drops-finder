@@ -11,8 +11,6 @@ from collections import defaultdict
 from dotenv import load_dotenv
 from flask import Flask, jsonify, request, send_from_directory
 
-from warframe.fetcher import fetch_drop_data
-from warframe.iterators import search_items
 from warframe.parser import DropDataParser
 
 # Load environment variables from .env file
@@ -41,14 +39,14 @@ def parse_queries(query: str) -> list[str]:
 _parser = DropDataParser()
 
 
-def run_search(data: dict, query: str, exact: bool) -> list:
+def run_search(query: str, exact: bool) -> list:
     """Run search for each query and combine results.
     Returns list sorted by drop chance (descending).
     """
     queries = parse_queries(query)
     results = []
     for q in queries:
-        results.extend(search_items(data, q, exact=exact))
+        results.extend(_parser.search_items(q, exact=exact))
     return sorted(results, key=lambda x: x.chance, reverse=True)
 
 
@@ -107,6 +105,8 @@ def format_multi_table_html(results: list, queries: list[str], max_results: int)
         f'<div class="results-header"><span class="results-count">'
         f"Found {len(results)} drops across {unique_locations} locations."
         f" Showing best {max_results}:</span></div>"
+        if max_results > 0
+        else ""
         '<table class="sortable"><thead><tr>'
         "<th>#</th><th>Location</th><th>Type</th>" + headers + "</tr></thead><tbody>" + row_html + "</tbody></table></div>"
     )
@@ -149,16 +149,12 @@ def index():
 
     results_html = ""
     if query:
-        # Fetch data (from cache or API)
-        data, refreshed = fetch_drop_data(force_refresh=refresh)
-
-        # Clear parsed data cache if data was refreshed
-        if refreshed:
-            _parser.clear()
+        # Refresh data (from cache or API)
+        _parser.refresh(force=refresh)
 
         # Run search and format results
         queries = parse_queries(query)
-        all_results = run_search(data, query, exact=exact)
+        all_results = run_search(query, exact=exact)
 
         # Apply mission type filter if specified
         if mission_types_filter:
@@ -199,8 +195,7 @@ def api_drops():
     mission_types = request.args.getlist("mission_type")
     max_results = int(request.args.get("n", "0"))
 
-    data = fetch_drop_data()
-    results = run_search(data, query, exact=exact)
+    results = run_search(query, exact=exact)
 
     if mission_types:
         results = [r for r in results if r.mission_type.lower() in [mt.lower() for mt in mission_types]]
@@ -227,9 +222,8 @@ def suggest_items():
     Returns JSON array of up to 10 matching items.
     """
     prefix = request.args.get("q", "").lower()
-    data = fetch_drop_data()
-    parsed = _parser.parse(data)
-    matches = [item for item in parsed.items if prefix in item.lower()][:10]
+    data = _parser.get_drop_data()
+    matches = [item for item in data.items if prefix in item.lower()][:10]
     return jsonify(matches)
 
 
@@ -240,9 +234,8 @@ def suggest_mission_types():
     Returns JSON array of up to 10 matching mission types.
     """
     prefix = request.args.get("q", "").lower()
-    data = fetch_drop_data()
-    parsed = _parser.parse(data)
-    mission_types = parsed.mission_types
+    data = _parser.get_drop_data()
+    mission_types = data.mission_types
     matches = [mt for mt in mission_types if prefix in mt.lower()][:10]
     return jsonify(matches)
 

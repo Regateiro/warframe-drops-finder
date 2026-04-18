@@ -1,18 +1,63 @@
 import pytest
 
-from warframe.iterators import (
-    iter_blueprint_drops,
-    iter_cetus_drops,
-    iter_key_drops,
-    iter_mission_drops,
-    iter_mod_drops,
-    iter_relic_drops,
-    iter_sortie_drops,
-    iter_transient_drops,
-    search_items,
-)
 from warframe.models import DropResult
-from warframe.web import get_unique_items, get_unique_mission_types, parse_queries
+from warframe.parser import DropDataParser
+from warframe.web import parse_queries
+
+_parser = DropDataParser()
+
+
+def get_unique_items(data):
+    return _parser._extract_items(data)
+
+
+def get_unique_mission_types(data):
+    return _parser._extract_mission_types(data)
+
+
+def iter_mission_drops(data, query, exact=False):
+    _parser.parse(data)
+    return _parser.iter_mission_drops(query, exact)
+
+
+def iter_relic_drops(data, query, exact=False):
+    _parser.parse(data)
+    return _parser.iter_relic_drops(query, exact)
+
+
+def iter_mod_drops(data, query, exact=False):
+    _parser.parse(data)
+    return _parser.iter_mod_drops(query, exact)
+
+
+def iter_blueprint_drops(data, query, exact=False):
+    _parser.parse(data)
+    return _parser.iter_blueprint_drops(query, exact)
+
+
+def iter_key_drops(data, query, exact=False):
+    _parser.parse(data)
+    return _parser.iter_key_drops(query, exact)
+
+
+def iter_transient_drops(data, query, exact=False):
+    _parser.parse(data)
+    return _parser.iter_transient_drops(query, exact)
+
+
+def iter_sortie_drops(data, query, exact=False):
+    _parser.parse(data)
+    return _parser.iter_sortie_drops(query, exact)
+
+
+def iter_cetus_drops(data, query, exact=False):
+    _parser.parse(data)
+    return _parser.iter_cetus_drops(query, exact)
+
+
+def search_items(data, query, exact=False):
+    _parser.parse(data)
+    return _parser.search_items(query, exact)
 
 
 @pytest.fixture
