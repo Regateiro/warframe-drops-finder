@@ -4,7 +4,7 @@ from collections import defaultdict
 from dotenv import load_dotenv
 from flask import Flask, jsonify, request, send_from_directory
 
-from warframe.fetcher import fetch_drop_data, refresh_drop_data
+from warframe.fetcher import fetch_drop_data
 from warframe.iterators import search_items
 
 load_dotenv()
@@ -74,6 +74,12 @@ def get_unique_mission_types(data: dict) -> list[str]:
 
 _items_cache = None
 _mission_types_cache = None
+
+
+def _clear_caches():
+    global _items_cache, _mission_types_cache
+    _items_cache = None
+    _mission_types_cache = None
 
 
 def get_items(data: dict) -> list[str]:
@@ -200,7 +206,7 @@ def index():
 
     results_html = ""
     if query:
-        data = refresh_drop_data() if refresh else fetch_drop_data()
+        data = fetch_drop_data(force_refresh=refresh)
         queries = parse_queries(query)
         all_results = run_search(data, query, exact=exact)
 
@@ -258,6 +264,7 @@ def api_drops():
 
 @app.route("/api/suggest-items")
 def suggest_items():
+    _clear_caches()
     prefix = request.args.get("q", "").lower()
     data = fetch_drop_data()
     items = get_items(data)
@@ -267,6 +274,7 @@ def suggest_items():
 
 @app.route("/api/suggest-mission-types")
 def suggest_mission_types():
+    _clear_caches()
     prefix = request.args.get("q", "").lower()
     data = fetch_drop_data()
     mission_types = get_mission_types(data)

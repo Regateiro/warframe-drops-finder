@@ -1,3 +1,9 @@
+"""Data fetching and caching for Warframe drop tables.
+
+Source: https://drops.warframestat.us/data/all.json
+Cache: .drop_cache.json (24 hour TTL by default)
+"""
+
 import json
 import os
 import time
@@ -11,33 +17,40 @@ CACHE_MAX_AGE = 86400
 
 
 def fetch_drop_data(force_refresh: bool = False) -> dict[str, Any]:
-    if os.path.exists(CACHE_FILE):
+    """Fetch drop data from cache or API.
+
+    Args:
+        force_refresh: If False (default), only refetch if cache is missing or corrupted.
+            If True, also fetch fresh data from API if the cache if it is expired (>24h old).
+
+    Returns:
+        Dictionary containing all drop table data from the API.
+
+    Raises:
+        SystemExit(1): If force_refresh=True and no cached data exists to fall back on.
+    """
+    if not os.path.exists(CACHE_FILE) or (force_refresh and (time.time() - os.path.getmtime(CACHE_FILE) > CACHE_MAX_AGE)):
+        return refresh_drop_data()
+
+    try:
         with open(CACHE_FILE) as f:
             return json.load(f)
-
-    print("Fetching drop data from API...")
-    try:
-        request = urllib.request.Request(API_URL, headers={"User-Agent": "Mozilla/5.0"})
-        with urllib.request.urlopen(request, timeout=60) as response:
-            data = json.loads(response.read())
-    except urllib.error.URLError as e:
-        print(f"Failed to fetch data: {e}")
-        raise SystemExit(1)
-
-    with open(CACHE_FILE, "w") as f:
-        json.dump(data, f)
-    print("Data cached successfully.")
-    return data
+    except (json.JSONDecodeError, IOError) as e:
+        print(f"Cache error: {e}. Refreshing data.")
+        return refresh_drop_data()
 
 
 def refresh_drop_data() -> dict[str, Any]:
-    if os.path.exists(CACHE_FILE):
-        cache_age = time.time() - os.path.getmtime(CACHE_FILE)
-        if cache_age < CACHE_MAX_AGE:
-            with open(CACHE_FILE) as f:
-                return json.load(f)
+    """Fetch fresh data from the API and update cache.
 
-    print("Fetching drop data from API...")
+    If the API request fails, falls back to existing cache if available.
+
+    Returns:
+        Dictionary containing all drop table data from the API.
+
+    Raises:
+        SystemExit(1): If API request fails and no cached data exists to fall back on.
+    """
     try:
         request = urllib.request.Request(API_URL, headers={"User-Agent": "Mozilla/5.0"})
         with urllib.request.urlopen(request, timeout=60) as response:
@@ -52,5 +65,5 @@ def refresh_drop_data() -> dict[str, Any]:
 
     with open(CACHE_FILE, "w") as f:
         json.dump(data, f)
-    print("Data cached successfully.")
+
     return data
