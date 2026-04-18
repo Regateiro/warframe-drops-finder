@@ -254,8 +254,8 @@ def index():
     refresh = "refresh" in request.args  # Force API refresh
     query = request.args.get("q", "")  # Search query
     num = int(request.args.get("n", "0"))  # Max results (0 = all)
-    exact = "exact" in request.args  # Exact match mode
-    exact_checked = " checked" if exact else ""  # For checkbox HTML
+    partial = "partial" in request.args  # Partial match mode
+    partial_checked = " checked" if partial else ""  # For checkbox HTML
     mission_types = request.args.get("mission_type", "")  # Mission type filter
 
     # Parse mission type filter (comma-separated)
@@ -268,7 +268,7 @@ def index():
 
         # Run search and get results
         queries = parse_queries(query)
-        all_results = run_search(query, exact=exact)
+        all_results = run_search(query, exact=not partial)
 
         # Apply mission type filter if specified
         if mission_types_filter:
@@ -290,7 +290,7 @@ def index():
         web_root=app.config["WEB_ROOT"],
         query=query,
         num=num,
-        exact_checked=exact_checked,
+        partial_checked=partial_checked,
         mission_type=mission_types,
         results=results_html,
     )
@@ -314,11 +314,11 @@ def api_drops():
     if not query:
         return jsonify(error="Missing query parameter 'q'"), 400
 
-    exact = "exact" in request.args
+    partial = "partial" in request.args  # Partial match mode
     mission_types = request.args.getlist("mission_type")
     max_results = int(request.args.get("n", "0"))
 
-    results = run_search(query, exact=exact)
+    results = run_search(query, exact=not partial)
 
     # Apply mission type filter if specified
     if mission_types:
