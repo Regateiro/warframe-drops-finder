@@ -89,6 +89,9 @@ function setupAutocomplete(input, api, onSelect) {
             if (idx >= 0) {
                 e.preventDefault();
                 select(items[idx].textContent, false);
+            } else if (!isOpen || items.length === 0) {
+                e.preventDefault();
+                input.form.submit();
             }
             return;
         }
