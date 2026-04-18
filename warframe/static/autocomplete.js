@@ -10,21 +10,19 @@ function setupAutocomplete(input, api, onSelect) {
     dropdown.style.cssText = 'position:absolute;top:100%;left:0;right:0;background:#2a2a2a;border:1px solid #444;border-top:none;list-style:none;margin:0;padding:0;max-height:250px;overflow-y:auto;z-index:1000;display:none';
     wrap.appendChild(dropdown);
 
-    let currentRequest = null;
+    let currentController = null;
 
     async function search(query) {
-        if (currentRequest) currentRequest.cancel();
-        currentRequest = { cancelled: false };
+        if (currentController) currentController.abort();
+        currentController = new AbortController();
 
         try {
             const url = api + encodeURIComponent(query);
-            console.log('Fetching:', url);
-            const res = await fetch(url);
+            const res = await fetch(url, { signal: currentController.signal });
             const items = await res.json();
-            if (currentRequest.cancelled) return;
             render(items);
         } catch (e) {
-            console.error('Autocomplete error:', e);
+            if (e.name !== 'AbortError') console.error('Autocomplete error:', e);
         }
     }
 
@@ -38,12 +36,14 @@ function setupAutocomplete(input, api, onSelect) {
             const li = document.createElement('li');
             li.textContent = item;
             li.style.cssText = 'padding:0.5rem 0.75rem;cursor:pointer;color:#fff';
-            li.onmouseenter = () => Array.from(dropdown.children).forEach(c => c.style.background = '');
+            li.onmouseover = () => {
+                Array.from(dropdown.children).forEach(c => c.style.background = '');
+                li.style.background = '#444';
+            };
             li.onmousedown = (e) => {
                 e.preventDefault();
                 select(item);
             };
-            li.onmouseover = () => li.style.background = '#444';
             dropdown.appendChild(li);
         });
         dropdown.style.display = 'block';
@@ -70,7 +70,7 @@ function setupAutocomplete(input, api, onSelect) {
     input.addEventListener('keydown', (e) => {
         const items = Array.from(dropdown.children);
         if (!items.length) return;
-        let idx = items.findIndex(li => li.style.background);
+        let idx = items.findIndex(li => li.style.background !== '');
         if (e.key === 'ArrowDown') {
             e.preventDefault();
             idx = idx < 0 ? 0 : Math.min(idx + 1, items.length - 1);
@@ -91,9 +91,7 @@ function setupAutocomplete(input, api, onSelect) {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
-    console.log('Setting up autocomplete...');
     const qInput = document.querySelector('input[name="q"]');
-    console.log('Found q input:', qInput);
     if (qInput) {
         setupAutocomplete(qInput, WEB_ROOT + '/api/suggest-items?q=', (item) => {
             qInput.form.submit();
@@ -102,7 +100,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const drawer = document.getElementById('drawer');
     const mtInput = drawer?.querySelector('input[name="mission_type"]');
-    console.log('Found mt input:', mtInput);
     if (mtInput) {
         setupAutocomplete(mtInput, WEB_ROOT + '/api/suggest-mission-types?q=', () => {
             mtInput.form.submit();
