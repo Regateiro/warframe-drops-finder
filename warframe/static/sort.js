@@ -27,14 +27,15 @@ async function loadMissionTypeSuggestions() {
     const itemsList = document.getElementById('items-list');
 
     try {
-        const mtypes = await fetch(WEB_ROOT + '/api/suggest-mission-types?q=A').then(r => r.json());
+        const cacheBust = Date.now();
+        const mtypes = await fetch(WEB_ROOT + '/api/suggest-mission-types?q=A&_=' + cacheBust).then(r => r.json());
         mtypes.forEach(mt => {
             const opt = document.createElement('option');
             opt.value = mt;
             missionTypesList.appendChild(opt);
         });
 
-        const items = await fetch(WEB_ROOT + '/api/suggest-items?q=_').then(r => r.json());
+        const items = await fetch(WEB_ROOT + '/api/suggest-items?q=0&_=' + cacheBust).then(r => r.json());
         items.forEach(item => {
             const opt = document.createElement('option');
             opt.value = item;
