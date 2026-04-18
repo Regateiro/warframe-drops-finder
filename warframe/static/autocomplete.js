@@ -179,8 +179,8 @@ function sortTable(table, col) {
         const av = a.cells[col].textContent.trim(), bv = b.cells[col].textContent.trim();
         const an = parseFloat(av), bn = parseFloat(bv);
         return isNaN(an) || isNaN(bn)
-            ? (state === 'asc' ? av.localeCompare(bv) : bv.localeCompare(av))
-            : (state === 'asc' ? an - bn : bn - an);
+            ? (state !== 'desc' ? av.localeCompare(bv) : bv.localeCompare(av))
+            : (state !== 'desc' ? an - bn : bn - an);
     });
 
     // Append sorted rows
