@@ -56,7 +56,13 @@ function setupAutocomplete(input, api, onSelect) {
     }
 
     function select(value) {
-        input.value = value;
+        let current = input.value;
+        const lastComma = current.lastIndexOf(',');
+        if (lastComma >= 0) {
+            input.value = current.slice(0, lastComma + 1).trim() + ' ' + value;
+        } else {
+            input.value = value;
+        }
         dropdown.style.display = 'none';
         if (onSelect) onSelect(value);
     }
