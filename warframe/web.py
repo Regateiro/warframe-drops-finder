@@ -1,3 +1,10 @@
+"""
+Warframe Drop Tables Web Search
+
+Flask web application for searching Warframe item drop locations.
+Uses cached drop data from warframestat.us API.
+"""
+
 import os
 from collections import defaultdict
 
@@ -7,22 +14,32 @@ from flask import Flask, jsonify, request, send_from_directory
 from warframe.fetcher import fetch_drop_data
 from warframe.iterators import search_items
 
+# Load environment variables from .env file
 load_dotenv()
 
+# Create Flask app with templates and static files
 app = Flask(__name__, template_folder="templates", static_folder="static")
 
+# Configuration from environment or defaults
 HOST = os.getenv("HOST", "127.0.0.1")
 PORT = int(os.getenv("PORT", "8080"))
 WEB_ROOT = os.getenv("WEB_ROOT", "/warframe")
 
+# Make WEB_ROOT available in templates
 app.config["WEB_ROOT"] = WEB_ROOT
 
 
 def parse_queries(query: str) -> list[str]:
+    """Split comma-separated query string into list of trimmed queries.
+    Example: "scindo,Forma Blueprint" -> ["scindo", "Forma Blueprint"]
+    """
     return [q.strip() for q in query.split(",") if q.strip()]
 
 
 def get_unique_items(data: dict) -> list[str]:
+    """Extract all unique item names from drop data.
+    Scans all drop sources: missions, relics, mods, blueprints, etc.
+    """
     items = set()
     for missions in data.get("missionRewards", {}).values():
         for details in missions.values():
@@ -63,6 +80,9 @@ def get_unique_items(data: dict) -> list[str]:
 
 
 def get_unique_mission_types(data: dict) -> list[str]:
+    """Extract unique mission types (game modes) from drop data.
+    Example: ["Capture", "Defense", "Survival", "Excavation"]
+    """
     mission_types = set()
     for missions in data.get("missionRewards", {}).values():
         for details in missions.values():
@@ -72,17 +92,15 @@ def get_unique_mission_types(data: dict) -> list[str]:
     return sorted(mission_types)
 
 
+# Module-level caches for items and mission types to avoid recomputing
 _items_cache = None
 _mission_types_cache = None
 
 
-def _clear_caches():
-    global _items_cache, _mission_types_cache
-    _items_cache = None
-    _mission_types_cache = None
-
-
 def get_items(data: dict) -> list[str]:
+    """Get cached list of all unique items from drop data.
+    Uses module-level cache to avoid recomputing on every request.
+    """
     global _items_cache
     if _items_cache is None:
         _items_cache = get_unique_items(data)
@@ -90,6 +108,9 @@ def get_items(data: dict) -> list[str]:
 
 
 def get_mission_types(data: dict) -> list[str]:
+    """Get cached list of unique mission types.
+    Uses module-level cache to avoid recomputing on every request.
+    """
     global _mission_types_cache
     if _mission_types_cache is None:
         _mission_types_cache = get_unique_mission_types(data)
@@ -97,6 +118,9 @@ def get_mission_types(data: dict) -> list[str]:
 
 
 def run_search(data: dict, query: str, exact: bool) -> list:
+    """Run search for each query and combine results.
+    Returns list sorted by drop chance (descending).
+    """
     queries = parse_queries(query)
     results = []
     for q in queries:
@@ -105,6 +129,9 @@ def run_search(data: dict, query: str, exact: bool) -> list:
 
 
 def format_multi_table_html(results: list, queries: list[str], max_results: int) -> str:
+    """Format search results as HTML table.
+    Groups results by location and shows best chance per item/rotation.
+    """
     by_location = defaultdict(lambda: defaultdict(dict))
     for result in results:
         key = (result.location, result.mission_type)
@@ -161,6 +188,7 @@ def format_multi_table_html(results: list, queries: list[str], max_results: int)
     )
 
 
+# Template caches - loaded once on first request
 INDEX_HTML = None
 MULTI_RESULT_TABLE = None
 NO_RESULTS = None
@@ -168,6 +196,9 @@ NO_RESULTS = None
 
 @app.before_request
 def load_templates():
+    """Load HTML templates into memory on first request.
+    Avoids file I/O on every request.
+    """
     global INDEX_HTML, MULTI_RESULT_TABLE, NO_RESULTS
     if INDEX_HTML is None:
         with open(os.path.join(app.root_path, "templates", "index.html")) as f:
@@ -180,6 +211,9 @@ def load_templates():
 
 @app.route("/")
 def index():
+    """Main search page.
+    Query params: q (search), n (max results), exact, mission_type filter, refresh
+    """
     refresh = "refresh" in request.args
     query = request.args.get("q", "")
     num = int(request.args.get("n", "0"))
@@ -217,6 +251,10 @@ def index():
 
 @app.route("/api/drops")
 def api_drops():
+    """API endpoint for drop search.
+    Query params: q (required), exact, mission_type (filter), n (max results)
+    Returns JSON array of drop results.
+    """
     query = request.args.get("q", "")
     if not query:
         return jsonify(error="Missing query parameter 'q'"), 400
@@ -248,7 +286,10 @@ def api_drops():
 
 @app.route("/api/suggest-items")
 def suggest_items():
-    _clear_caches()
+    """Autocomplete endpoint for item names.
+    Query param: q (prefix to match)
+    Returns JSON array of up to 10 matching items.
+    """
     prefix = request.args.get("q", "").lower()
     data = fetch_drop_data()
     items = get_items(data)
@@ -258,7 +299,10 @@ def suggest_items():
 
 @app.route("/api/suggest-mission-types")
 def suggest_mission_types():
-    _clear_caches()
+    """Autocomplete endpoint for mission types.
+    Query param: q (prefix to match)
+    Returns JSON array of up to 10 matching mission types.
+    """
     prefix = request.args.get("q", "").lower()
     data = fetch_drop_data()
     mission_types = get_mission_types(data)
@@ -268,10 +312,15 @@ def suggest_mission_types():
 
 @app.route("/static/<path:filename>")
 def static_file(filename):
+    """Serve static files (CSS, JS, images)."""
     return send_from_directory(app.static_folder, filename)
 
 
 def run_server(host=None, port=None):
+    """Run development server.
+    Uses Flask dev server (not for production).
+    For production use: gunicorn warframe.web:app
+    """
     if host is None:
         host = HOST
     if port is None:

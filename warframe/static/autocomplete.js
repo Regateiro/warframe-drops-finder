@@ -1,19 +1,35 @@
+// CSS constants for dropdown appearance
 const DROPDOWN_STYLE = 'position:absolute;top:100%;left:0;right:0;background:#2a2a2a;border:1px solid #444;border-top:none;list-style:none;margin:0;padding:0;max-height:250px;overflow-y:auto;z-index:1000;display:none';
 const ITEM_STYLE = 'padding:0.5rem 0.75rem;cursor:pointer;color:#fff';
 
+
+/**
+ * Set up autocomplete on an input element.
+ * @param {HTMLInputElement} input - The input element to attach to.
+ * @param {string} api - The API endpoint URL for suggestions.
+ */
 function setupAutocomplete(input, api) {
+    // Disable default browser autocomplete
     input.autocomplete = 'off';
+
+    // AbortController for canceling pending requests
     let controller = null;
 
+    // Wrap input in relative container so dropdown positions correctly
     const wrapper = document.createElement('div');
     wrapper.style.cssText = 'position: relative; flex: 1; width: 100%;';
     input.parentNode.insertBefore(wrapper, input);
     wrapper.appendChild(input);
 
+    // Create dropdown UL element
     const dropdown = document.createElement('ul');
     dropdown.style.cssText = DROPDOWN_STYLE;
     wrapper.appendChild(dropdown);
 
+    /**
+     * Fetch suggestions from API.
+     * Uses AbortController to cancel stale requests on new input.
+     */
     function search(query) {
         if (controller) controller.abort();
         controller = new AbortController();
@@ -23,6 +39,7 @@ function setupAutocomplete(input, api) {
             .catch(e => { if (e.name !== 'AbortError') console.error(e); });
     }
 
+    /** Render suggestions in dropdown. */
     function show(items) {
         dropdown.innerHTML = '';
         if (!items.length) {
@@ -34,35 +51,45 @@ function setupAutocomplete(input, api) {
             li.textContent = item;
             li.style.cssText = ITEM_STYLE;
             li.onmouseover = () => highlight(li);
+            // Prevent blur from firing before selection
             li.onmousedown = (e) => { e.preventDefault(); select(item, false); };
             dropdown.appendChild(li);
         });
         dropdown.style.display = 'block';
     }
 
+    /** Highlight item on hover. */
     function highlight(li) {
         Array.from(dropdown.children).forEach(c => c.style.background = '');
         li.style.background = '#444';
     }
 
+    /** Select an item from dropdown. */
     function select(value, doSubmit = true) {
+        // Handle comma-separated values - append to last or create new
         const last = input.value.lastIndexOf(',');
         input.value = last >= 0 ? input.value.slice(0, last + 1).trim() + ' ' + value : value;
         dropdown.style.display = 'none';
         if (doSubmit) input.form.submit();
     }
 
+    /** Handle input event with debounce. */
     function handleInput() {
         let q = input.value.trim();
+        // Get the last comma-separated value to search
         const last = q.lastIndexOf(',');
         q = last >= 0 ? q.slice(last + 1).trim() : q;
         if (!q) return dropdown.style.display = 'none';
+        // Debounce requests by 150ms
         clearTimeout(input._timer);
         input._timer = setTimeout(() => search(q), 150);
     }
 
+    /** Handle keyboard navigation in dropdown. */
     function handleKey(e) {
         const items = Array.from(dropdown.children);
+
+        // Enter - select highlighted item
         if (e.key === 'Enter') {
             if (items.length && dropdown.style.display === 'block') {
                 const idx = items.findIndex(li => li.style.background !== '');
@@ -70,9 +97,11 @@ function setupAutocomplete(input, api) {
             }
             return;
         }
+        // Escape - close dropdown
         if (e.key === 'Escape') { dropdown.style.display = 'none'; return; }
         if (!items.length || dropdown.style.display !== 'block') return;
 
+        // Arrow keys - navigate
         let idx = items.findIndex(li => li.style.background !== '');
         if (e.key === 'ArrowDown') idx = idx < 0 ? 0 : Math.min(idx + 1, items.length - 1);
         else if (e.key === 'ArrowUp') idx = idx < 0 ? items.length - 1 : Math.max(idx - 1, 0);
@@ -82,44 +111,68 @@ function setupAutocomplete(input, api) {
         items[idx] && (items[idx].style.background = '#444');
     }
 
+    // Attach event listeners
     input.addEventListener('input', handleInput);
+    // Delay hide to allow click to fire first
     input.addEventListener('blur', () => setTimeout(() => dropdown.style.display = 'none', 150));
     input.addEventListener('keydown', handleKey);
 }
 
+
+ // Initialize on page load
 document.addEventListener('DOMContentLoaded', () => {
+    // Main search input
     const qInput = document.querySelector('input[name="q"]');
     if (qInput) setupAutocomplete(qInput, WEB_ROOT + '/api/suggest-items?q=');
 
+    // Mission type filter input (in drawer)
     const drawer = document.getElementById('drawer');
     const mtInput = drawer?.querySelector('input[name="mission_type"]');
     if (mtInput) setupAutocomplete(mtInput, WEB_ROOT + '/api/suggest-mission-types?q=');
 
+    // Make table headers clickable for sorting
     document.querySelectorAll('table.sortable').forEach(table => {
         table.querySelectorAll('th').forEach((th, i) => th.onclick = () => sortTable(table, i));
     });
 
+    // Restore drawer state from localStorage
     if (drawer) {
         const open = mtInput?.value.trim() || localStorage.getItem('drawerOpen') === 'true';
         if (open) drawer.classList.add('open');
     }
 });
 
+
+/** Toggle the advanced options drawer. */
 function toggleDrawer() {
     const drawer = document.getElementById('drawer');
     drawer.classList.toggle('open');
     localStorage.setItem('drawerOpen', drawer.classList.contains('open'));
 }
 
+
+ /**
+ * Sort a table by column.
+ * @param {HTMLTableElement} table - The table to sort.
+ * @param {number} col - Column index to sort by.
+ */
 function sortTable(table, col) {
     const tbody = table.tBodies[0];
     const rows = Array.from(tbody.querySelectorAll('tr'));
     const th = table.querySelectorAll('th')[col];
+
+    // Cycle through states: unsorted -> asc -> desc -> unsorted
     let state = th.classList.contains('asc') ? 'desc' : th.classList.contains('desc') ? 'unsorted' : 'asc';
+
+    // Clear existing sort classes
     table.querySelectorAll('th').forEach(h => h.classList.remove('asc', 'desc'));
     if (state !== 'unsorted') th.classList.add(state);
+
+    // Remove header row from sorting
     const header = rows.shift();
     if (state === 'unsorted') { rows.unshift(header); rows.forEach(r => tbody.appendChild(r)); return; }
+
+    // Sort rows
     rows.sort((a, b) => {
         const av = a.cells[col].textContent.trim(), bv = b.cells[col].textContent.trim();
         const an = parseFloat(av), bn = parseFloat(bv);
@@ -127,5 +180,7 @@ function sortTable(table, col) {
             ? (state === 'asc' ? av.localeCompare(bv) : bv.localeCompare(av))
             : (state === 'asc' ? an - bn : bn - an);
     });
+
+    // Put header back and append sorted rows
     rows.unshift(header); rows.forEach(r => tbody.appendChild(r));
 }
