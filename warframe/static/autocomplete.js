@@ -83,7 +83,6 @@ function setupAutocomplete(input, api, onSelect) {
     input.addEventListener('blur', () => setTimeout(() => dropdown.style.display = 'none', 150));
     input.addEventListener('keydown', (e) => {
         const items = Array.from(dropdown.children);
-        if (!items.length) return;
         let idx = items.findIndex(li => li.style.background !== '');
         if (e.key === 'ArrowDown') {
             e.preventDefault();
@@ -91,9 +90,13 @@ function setupAutocomplete(input, api, onSelect) {
         } else if (e.key === 'ArrowUp') {
             e.preventDefault();
             idx = idx < 0 ? items.length - 1 : Math.max(idx - 1, 0);
-        } else if (e.key === 'Enter' && idx >= 0) {
+        } else if (e.key === 'Enter') {
             e.preventDefault();
-            select(items[idx].textContent, false);
+            if (idx >= 0) {
+                select(items[idx].textContent, false);
+            } else {
+                input.form.submit();
+            }
             return;
         } else return;
         items.forEach(li => li.style.background = '');
