@@ -13,6 +13,7 @@ from flask import Flask, jsonify, request, send_from_directory
 
 from warframe.fetcher import fetch_drop_data
 from warframe.iterators import search_items
+from warframe.parser import DropDataParser
 
 # Load environment variables from .env file
 load_dotenv()
@@ -36,85 +37,8 @@ def parse_queries(query: str) -> list[str]:
     return [q.strip() for q in query.split(",") if q.strip()]
 
 
-def get_unique_items(data: dict) -> list[str]:
-    """Extract all unique item names from drop data.
-    Scans all drop sources: missions, relics, mods, blueprints, etc.
-    """
-    items = set()
-    for missions in data.get("missionRewards", {}).values():
-        for details in missions.values():
-            rewards = details.get("rewards", {})
-            if isinstance(rewards, dict):
-                for tier_list in rewards.values():
-                    for item in tier_list:
-                        items.add(item.get("itemName", ""))
-            elif isinstance(rewards, list):
-                for item in rewards:
-                    items.add(item.get("itemName", ""))
-    for relic in data.get("relics", []):
-        for reward in relic.get("rewards", []):
-            items.add(reward.get("itemName", ""))
-    for mod_loc in data.get("modLocations", []):
-        items.add(mod_loc.get("modName", ""))
-    for bp_loc in data.get("blueprintLocations", []):
-        items.add(bp_loc.get("blueprintName", bp_loc.get("itemName", "")))
-        items.add(bp_loc.get("itemName", ""))
-    for key in data.get("keyRewards", []):
-        rewards = key.get("rewards", {})
-        if isinstance(rewards, dict):
-            for tier_list in rewards.values():
-                for item in tier_list:
-                    items.add(item.get("itemName", ""))
-    for transient in data.get("transientRewards", []):
-        for reward in transient.get("rewards", []):
-            items.add(reward.get("itemName", ""))
-    for reward in data.get("sortieRewards", []):
-        items.add(reward.get("itemName", ""))
-    for bounty in data.get("cetusBountyRewards", []):
-        rewards = bounty.get("rewards", {})
-        if isinstance(rewards, dict):
-            for tier_list in rewards.values():
-                for item in tier_list:
-                    items.add(item.get("itemName", ""))
-    return sorted(items)
-
-
-def get_unique_mission_types(data: dict) -> list[str]:
-    """Extract unique mission types (game modes) from drop data.
-    Example: ["Capture", "Defense", "Survival", "Excavation"]
-    """
-    mission_types = set()
-    for missions in data.get("missionRewards", {}).values():
-        for details in missions.values():
-            game_mode = details.get("gameMode", "")
-            if game_mode:
-                mission_types.add(game_mode)
-    return sorted(mission_types)
-
-
-# Module-level caches for items and mission types to avoid recomputing
-_items_cache = None
-_mission_types_cache = None
-
-
-def get_items(data: dict) -> list[str]:
-    """Get cached list of all unique items from drop data.
-    Uses module-level cache to avoid recomputing on every request.
-    """
-    global _items_cache
-    if _items_cache is None:
-        _items_cache = get_unique_items(data)
-    return _items_cache
-
-
-def get_mission_types(data: dict) -> list[str]:
-    """Get cached list of unique mission types.
-    Uses module-level cache to avoid recomputing on every request.
-    """
-    global _mission_types_cache
-    if _mission_types_cache is None:
-        _mission_types_cache = get_unique_mission_types(data)
-    return _mission_types_cache
+# Parser instance with internal caching
+_parser = DropDataParser()
 
 
 def run_search(data: dict, query: str, exact: bool) -> list:
@@ -214,6 +138,7 @@ def index():
     """Main search page.
     Query params: q (search), n (max results), exact, mission_type filter, refresh
     """
+    # Parse query parameters
     refresh = "refresh" in request.args
     query = request.args.get("q", "")
     num = int(request.args.get("n", "0"))
@@ -224,20 +149,31 @@ def index():
 
     results_html = ""
     if query:
-        data = fetch_drop_data(force_refresh=refresh)
+        # Fetch data (from cache or API)
+        data, refreshed = fetch_drop_data(force_refresh=refresh)
+
+        # Clear parsed data cache if data was refreshed
+        if refreshed:
+            _parser.clear()
+
+        # Run search and format results
         queries = parse_queries(query)
         all_results = run_search(data, query, exact=exact)
 
+        # Apply mission type filter if specified
         if mission_types_filter:
             all_results = [r for r in all_results if r.mission_type.lower() in [mt.lower() for mt in mission_types_filter]]
 
+        # Limit results if num > 0
         results = all_results[:num] if num > 0 else all_results
 
+        # Format results as HTML table or show no results message
         if results:
             results_html = format_multi_table_html(all_results, queries, num)
         else:
             results_html = NO_RESULTS.format(query=query)
 
+    # Render main page with results
     html = INDEX_HTML.format(
         web_root=app.config["WEB_ROOT"],
         query=query,
@@ -292,8 +228,8 @@ def suggest_items():
     """
     prefix = request.args.get("q", "").lower()
     data = fetch_drop_data()
-    items = get_items(data)
-    matches = [item for item in items if prefix in item.lower()][:10]
+    parsed = _parser.parse(data)
+    matches = [item for item in parsed.items if prefix in item.lower()][:10]
     return jsonify(matches)
 
 
@@ -305,7 +241,8 @@ def suggest_mission_types():
     """
     prefix = request.args.get("q", "").lower()
     data = fetch_drop_data()
-    mission_types = get_mission_types(data)
+    parsed = _parser.parse(data)
+    mission_types = parsed.mission_types
     matches = [mt for mt in mission_types if prefix in mt.lower()][:10]
     return jsonify(matches)
 
@@ -324,6 +261,11 @@ def run_server(host=HOST, port=PORT):
     print(f"Starting server on http://{host}:{port}")
     print("API endpoint: /api/drops?q=<query>")
     app.run(host=host, port=port)
+
+
+def create_app():
+    """Create and return the Flask app (for testing/gunicorn)."""
+    return app
 
 
 if __name__ == "__main__":

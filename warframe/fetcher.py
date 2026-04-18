@@ -16,7 +16,7 @@ CACHE_FILE = ".drop_cache.json"
 CACHE_MAX_AGE = 86400
 
 
-def fetch_drop_data(force_refresh: bool = False) -> dict[str, Any]:
+def fetch_drop_data(force_refresh: bool = False) -> tuple[dict[str, Any], bool]:
     """Fetch drop data from cache or API.
 
     Args:
@@ -24,20 +24,20 @@ def fetch_drop_data(force_refresh: bool = False) -> dict[str, Any]:
             If True, also fetch fresh data from API if the cache if it is expired (>24h old).
 
     Returns:
-        Dictionary containing all drop table data from the API.
+        Tuple of (drop data dictionary, boolean indicating if data was refreshed).
 
     Raises:
         SystemExit(1): If force_refresh=True and no cached data exists to fall back on.
     """
     if not os.path.exists(CACHE_FILE) or (force_refresh and (time.time() - os.path.getmtime(CACHE_FILE) > CACHE_MAX_AGE)):
-        return refresh_drop_data()
+        return refresh_drop_data(), True
 
     try:
         with open(CACHE_FILE) as f:
-            return json.load(f)
+            return json.load(f), False
     except (json.JSONDecodeError, IOError) as e:
         print(f"Cache error: {e}. Refreshing data.")
-        return refresh_drop_data()
+        return refresh_drop_data(), True
 
 
 def refresh_drop_data() -> dict[str, Any]:
