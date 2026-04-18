@@ -157,8 +157,12 @@ function toggleDrawer() {
  * @param {number} col - Column index to sort by.
  */
 function sortTable(table, col) {
+    // Get table body and rows
     const tbody = table.tBodies[0];
+    // Note: querying for 'tr' already removes headers, so we can just 
+    //   sort by cell content without skipping the first row
     const rows = Array.from(tbody.querySelectorAll('tr'));
+    // Get the header cell for the clicked column
     const th = table.querySelectorAll('th')[col];
 
     // Cycle through states: unsorted -> asc -> desc -> unsorted
@@ -167,10 +171,8 @@ function sortTable(table, col) {
     // Clear existing sort classes
     table.querySelectorAll('th').forEach(h => h.classList.remove('asc', 'desc'));
     if (state !== 'unsorted') th.classList.add(state);
-
-    // Remove header row from sorting
-    const header = rows.shift();
-    if (state === 'unsorted') { rows.unshift(header); rows.forEach(r => tbody.appendChild(r)); return; }
+    // If unsorted, default to original order (first column) for sorting
+    else { col = 0; }
 
     // Sort rows
     rows.sort((a, b) => {
@@ -181,6 +183,6 @@ function sortTable(table, col) {
             : (state === 'asc' ? an - bn : bn - an);
     });
 
-    // Put header back and append sorted rows
-    rows.unshift(header); rows.forEach(r => tbody.appendChild(r));
+    // Append sorted rows
+    rows.forEach(r => tbody.appendChild(r));
 }
