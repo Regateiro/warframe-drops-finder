@@ -64,7 +64,9 @@ function setupAutocomplete(input, api, onSelect) {
     let debounceTimer;
     input.addEventListener('input', () => {
         clearTimeout(debounceTimer);
-        const query = input.value.trim();
+        let query = input.value.trim();
+        const lastComma = query.lastIndexOf(',');
+        if (lastComma >= 0) query = query.slice(lastComma + 1).trim();
         if (query.length < 1) {
             dropdown.style.display = 'none';
             return;
