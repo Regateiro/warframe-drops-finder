@@ -5,9 +5,14 @@ function setupAutocomplete(input, api) {
     input.autocomplete = 'off';
     let controller = null;
 
+    const wrapper = document.createElement('div');
+    wrapper.style.cssText = 'position: relative; flex: 1; width: 100%;';
+    input.parentNode.insertBefore(wrapper, input);
+    wrapper.appendChild(input);
+
     const dropdown = document.createElement('ul');
     dropdown.style.cssText = DROPDOWN_STYLE;
-    input.parentNode.appendChild(dropdown);
+    wrapper.appendChild(dropdown);
 
     function search(query) {
         if (controller) controller.abort();
@@ -19,7 +24,11 @@ function setupAutocomplete(input, api) {
     }
 
     function show(items) {
-        dropdown.innerHTML = items.length ? '' : (dropdown.style.display = 'none');
+        dropdown.innerHTML = '';
+        if (!items.length) {
+            dropdown.style.display = 'none';
+            return;
+        }
         items.forEach(item => {
             const li = document.createElement('li');
             li.textContent = item;
@@ -28,7 +37,7 @@ function setupAutocomplete(input, api) {
             li.onmousedown = (e) => { e.preventDefault(); select(item, false); };
             dropdown.appendChild(li);
         });
-        if (items.length) dropdown.style.display = 'block';
+        dropdown.style.display = 'block';
     }
 
     function highlight(li) {

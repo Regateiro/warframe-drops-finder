@@ -1,35 +1,35 @@
-import re
+"""Search iterators for Warframe drop table data.
+
+Each iterator searches a specific data source (missions, relics, mods, etc.) and returns
+matching DropResult objects sorted by drop chance (descending).
+"""
+
 from itertools import chain
 from typing import Any, Callable
 
 from .models import DropResult
 
-RELIC_PATTERN = re.compile(r"^(lith|meso|neo|axi)\s+[a-z][1-9][0-9]?$", re.IGNORECASE)
-
 
 def make_match_fn(query: str, exact: bool) -> Callable[[str], bool]:
-    query_lower = query.lower()
-    if exact:
-        if query_lower.endswith(" relic"):
-            return lambda name: name.lower() == query_lower
+    """Create a case-insensitive match function for item names.
 
-        paren_idx = query_lower.rfind(" (")
-        if paren_idx > 0 and RELIC_PATTERN.match(query_lower[:paren_idx]):
-            base = query_lower[:paren_idx]
-            relic_variant = f"{base} relic{query_lower[paren_idx:]}"
-            return lambda name: name.lower() in (query_lower, relic_variant)
+    Args:
+        query: The search query string.
+        exact: If True, match item names exactly (case-insensitive).
+               If False, match as substring.
 
-        if RELIC_PATTERN.match(query_lower):
-            relic_variant = f"{query_lower} relic"
-            return lambda name: name.lower() in (query_lower, relic_variant)
-
-        relic_variant = f"{query_lower} relic"
-        radiant_variant = f"{query_lower} relic (radiant)"
-        return lambda name: name.lower() in (query_lower, relic_variant, radiant_variant)
-    return lambda name: query_lower in name.lower()
+    Returns:
+        A callable that returns True if an item name matches the query.
+    """
+    return lambda name: query.lower() == name.lower() if exact else query.lower() in name.lower()
 
 
 def iter_mission_drops(data: dict[str, Any], query: str, exact: bool = False) -> list[DropResult]:
+    """Search mission drop tables for matching items.
+
+    Source: data["missionRewards"] - {planet: {mission: {gameMode, rewards}}}
+    Rewards can be dict {tier: [items]} or list [items].
+    """
     results: list[DropResult] = []
     match_fn = make_match_fn(query, exact)
 
@@ -55,6 +55,10 @@ def iter_mission_drops(data: dict[str, Any], query: str, exact: bool = False) ->
 
 
 def iter_relic_drops(data: dict[str, Any], query: str, exact: bool = False) -> list[DropResult]:
+    """Search vaulted relic drops for matching items.
+
+    Source: data["relics"] - [{tier, relicName, state, rewards}]
+    """
     results: list[DropResult] = []
     match_fn = make_match_fn(query, exact)
 
@@ -71,6 +75,10 @@ def iter_relic_drops(data: dict[str, Any], query: str, exact: bool = False) -> l
 
 
 def iter_mod_drops(data: dict[str, Any], query: str, exact: bool = False) -> list[DropResult]:
+    """Search enemy drop mod locations.
+
+    Source: data["modLocations"] - [{modName, enemies: [{enemyName, chance}]}]
+    """
     results: list[DropResult] = []
     match_fn = make_match_fn(query, exact)
 
@@ -85,6 +93,10 @@ def iter_mod_drops(data: dict[str, Any], query: str, exact: bool = False) -> lis
 
 
 def iter_blueprint_drops(data: dict[str, Any], query: str, exact: bool = False) -> list[DropResult]:
+    """Search enemy drop blueprint locations.
+
+    Source: data["blueprintLocations"] - [{blueprintName, enemies: [{enemyName, chance}]}]
+    """
     results: list[DropResult] = []
     match_fn = make_match_fn(query, exact)
 
@@ -99,6 +111,10 @@ def iter_blueprint_drops(data: dict[str, Any], query: str, exact: bool = False) 
 
 
 def iter_key_drops(data: dict[str, Any], query: str, exact: bool = False) -> list[DropResult]:
+    """Search mission key reward tables.
+
+    Source: data["keyRewards"] - [{keyName, rewards: {tier: [items]}}]
+    """
     results: list[DropResult] = []
     match_fn = make_match_fn(query, exact)
 
@@ -116,6 +132,10 @@ def iter_key_drops(data: dict[str, Any], query: str, exact: bool = False) -> lis
 
 
 def iter_transient_drops(data: dict[str, Any], query: str, exact: bool = False) -> list[DropResult]:
+    """Search transient mission rewards (Rush, Defection, etc.).
+
+    Source: data["transientRewards"] - [{objectiveName, rewards: [{itemName, chance, rotation}]}]
+    """
     results: list[DropResult] = []
     match_fn = make_match_fn(query, exact)
 
@@ -131,6 +151,10 @@ def iter_transient_drops(data: dict[str, Any], query: str, exact: bool = False) 
 
 
 def iter_sortie_drops(data: dict[str, Any], query: str, exact: bool = False) -> list[DropResult]:
+    """Search Sortie reward tables.
+
+    Source: data["sortieRewards"] - [{itemName, chance}]
+    """
     results: list[DropResult] = []
     match_fn = make_match_fn(query, exact)
 
@@ -143,6 +167,10 @@ def iter_sortie_drops(data: dict[str, Any], query: str, exact: bool = False) -> 
 
 
 def iter_cetus_drops(data: dict[str, Any], query: str, exact: bool = False) -> list[DropResult]:
+    """Search Cetus/Fortuna bounty rewards.
+
+    Source: data["cetusBountyRewards"] - [{place, rewards: {tier: [items]}}]
+    """
     results: list[DropResult] = []
     match_fn = make_match_fn(query, exact)
 
@@ -159,6 +187,7 @@ def iter_cetus_drops(data: dict[str, Any], query: str, exact: bool = False) -> l
     return results
 
 
+# All iterators combined - used by search_items()
 ITERATORS: list[Callable[[dict[str, Any], str, bool], list[DropResult]]] = [
     iter_mission_drops,
     iter_relic_drops,
@@ -172,5 +201,15 @@ ITERATORS: list[Callable[[dict[str, Any], str, bool], list[DropResult]]] = [
 
 
 def search_items(data: dict[str, Any], query: str, exact: bool = False) -> list[DropResult]:
+    """Search all drop sources for matching items.
+
+    Args:
+        data: Full drop table data from the API.
+        query: Search string.
+        exact: If True, match exact item names. If False, substring match.
+
+    Returns:
+        All matching DropResult objects sorted by chance descending.
+    """
     results = list(chain.from_iterable(it(data, query, exact) for it in ITERATORS))
     return sorted(results, key=lambda x: x.chance, reverse=True)
