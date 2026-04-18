@@ -104,14 +104,6 @@ def run_search(data: dict, query: str, exact: bool) -> list:
     return sorted(results, key=lambda x: x.chance, reverse=True)
 
 
-def strip_relic_suffix(name: str) -> str:
-    return name.replace(" Relic", "").replace(" (Radiant)", "")
-
-
-def strip_relic_for_display(name: str) -> str:
-    return name.replace(" Relic", "")
-
-
 def format_multi_table_html(results: list, queries: list[str], max_results: int) -> str:
     by_location = defaultdict(lambda: defaultdict(dict))
     for result in results:
@@ -126,19 +118,11 @@ def format_multi_table_html(results: list, queries: list[str], max_results: int)
 
     sorted_locations = sorted(by_location.items(), key=location_score, reverse=True)
 
-    base_items = [strip_relic_suffix(q) for q in queries]
-
     def make_columns(item_dict: dict) -> list[str]:
         cols = []
-        for base in base_items:
-            if base in item_dict:
-                cols.append(base)
-            elif f"{base} Relic" in item_dict:
-                cols.append(f"{base} Relic")
-            if f"{base} (Radiant)" in item_dict:
-                cols.append(f"{base} (Radiant)")
-            elif f"{base} Relic (Radiant)" in item_dict:
-                cols.append(f"{base} Relic (Radiant)")
+        for item in queries:
+            if item in item_dict:
+                cols.append(item)
         return cols
 
     if len(queries) > 1:
@@ -150,7 +134,7 @@ def format_multi_table_html(results: list, queries: list[str], max_results: int)
     else:
         item_columns = sorted(set(r.item_name for r in results))
 
-    headers = "".join(f"<th>{strip_relic_for_display(item)}</th>" for item in item_columns)
+    headers = "".join(f"<th>{item}</th>" for item in item_columns)
 
     rows = []
     for idx, ((location, mission_type), items_dict) in enumerate(sorted_locations if max_results == 0 else sorted_locations[:max_results], 1):
