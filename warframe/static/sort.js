@@ -28,7 +28,7 @@ async function loadMissionTypeSuggestions() {
     console.log('datalist element:', missionTypesList);
 
     try {
-        const missionTypesRes = await fetch(WEB_ROOT + '/api/suggest-mission-types?q=' + Date.now());
+        const missionTypesRes = await fetch(WEB_ROOT + '/api/suggest-mission-types?q=A');
         console.log('response status:', missionTypesRes.status);
         const missionTypes = await missionTypesRes.json();
         console.log('got mission types:', missionTypes);
