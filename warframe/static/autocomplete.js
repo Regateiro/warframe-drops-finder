@@ -18,6 +18,7 @@ function setupAutocomplete(input, api, onSelect) {
 
         try {
             const url = api + encodeURIComponent(query);
+            console.log('Fetching:', url);
             const res = await fetch(url);
             const items = await res.json();
             if (currentRequest.cancelled) return;
@@ -90,7 +91,9 @@ function setupAutocomplete(input, api, onSelect) {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
+    console.log('Setting up autocomplete...');
     const qInput = document.querySelector('input[name="q"]');
+    console.log('Found q input:', qInput);
     if (qInput) {
         setupAutocomplete(qInput, WEB_ROOT + '/api/suggest-items?q=', (item) => {
             qInput.form.submit();
@@ -99,6 +102,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const drawer = document.getElementById('drawer');
     const mtInput = drawer?.querySelector('input[name="mission_type"]');
+    console.log('Found mt input:', mtInput);
     if (mtInput) {
         setupAutocomplete(mtInput, WEB_ROOT + '/api/suggest-mission-types?q=', () => {
             mtInput.form.submit();
