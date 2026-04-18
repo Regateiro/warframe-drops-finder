@@ -13,4 +13,4 @@ serve:
 	poetry run gunicorn -w 2 warframe.web:app
 
 deploy:
-	ssh ovh "cd warframe-drops-finder && git pull && poetry lock && poetry install"
+	ssh ovh "cd warframe-drops-finder && git pull && poetry lock && poetry install && sudo systemctl restart warframe.service"
