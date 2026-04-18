@@ -97,7 +97,7 @@ function sortTable(table, colIndex) {
     }
 
     // Preserve header row during sort
-    const header = rows.shift();
+    //const header = rows.shift();
 
     // If unsorted, restore original order by sorting on the first column (#)
     if (state === 'unsorted') {
@@ -118,6 +118,6 @@ function sortTable(table, colIndex) {
         return asc ? aVal.localeCompare(bVal) : bVal.localeCompare(aVal);
     });
 
-    rows.unshift(header);
+    //rows.unshift(header);
     rows.forEach(row => tbody.appendChild(row));
 }
