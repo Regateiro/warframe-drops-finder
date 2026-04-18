@@ -11,7 +11,6 @@ poetry run <cmd>     # run command in venv
 - `make test` — runs pytest with verbose output
 - `make serve` — runs the webserver (gunicorn)
 - `make deploy` — deploys to production server
-- `make install` — prints systemd service setup instructions
 
 ## Dependencies
 - Runtime: flask, gunicorn
