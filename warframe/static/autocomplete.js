@@ -1,9 +1,5 @@
 function setupAutocomplete(input, api, onSelect) {
-    const wrap = document.createElement('div');
-    wrap.className = 'autocomplete-wrap';
-    wrap.style.position = 'relative';
-    input.parentNode.insertBefore(wrap, input);
-    wrap.appendChild(input);
+    input.setAttribute('autocomplete', 'off');
 
     const dropdown = document.createElement('ul');
     dropdown.className = 'autocomplete-dropdown';
