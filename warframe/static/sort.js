@@ -94,16 +94,12 @@ function sortTable(table, colIndex) {
     table.querySelectorAll('th').forEach(h => h.classList.remove('asc', 'desc'));
     if (state !== 'unsorted') {
         th.classList.add(state);
-    }
-
-    // Preserve header row during sort
-    //const header = rows.shift();
-
-    // If unsorted, restore original order by sorting on the first column (#)
-    if (state === 'unsorted') {
+    } else {
+        // If unsorted, restore original order by sorting on the first column (#)
         colIndex = 0;
     }
 
+    // Sort rows based on the selected column and state
     const asc = state === 'asc';
     rows.sort((a, b) => {
         const aVal = a.cells[colIndex].textContent.trim();
@@ -118,6 +114,6 @@ function sortTable(table, colIndex) {
         return asc ? aVal.localeCompare(bVal) : bVal.localeCompare(aVal);
     });
 
-    //rows.unshift(header);
+    // Append sorted rows back to the table body
     rows.forEach(row => tbody.appendChild(row));
 }
