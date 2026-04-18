@@ -4,60 +4,76 @@ from warframe.models import DropResult
 from warframe.parser import DropDataParser
 from warframe.web import parse_queries
 
-_parser = DropDataParser()
+
+def get_unique_items(parser, data):
+    parser._data = data
+    parser._recache()
+    return parser.get_drop_data().items
 
 
-def get_unique_items(data):
-    return _parser._extract_items(data)
+def get_unique_mission_types(parser, data):
+    parser._data = data
+    parser._recache()
+    return parser.get_drop_data().mission_types
 
 
-def get_unique_mission_types(data):
-    return _parser._extract_mission_types(data)
+def iter_mission_drops(parser, data, query, exact=False):
+    parser._data = data
+    parser._recache()
+    return parser._iter_mission_drops(query, exact)
 
 
-def iter_mission_drops(data, query, exact=False):
-    _parser.parse(data)
-    return _parser.iter_mission_drops(query, exact)
+def iter_relic_drops(parser, data, query, exact=False):
+    parser._data = data
+    parser._recache()
+    return parser._iter_relic_drops(query, exact)
 
 
-def iter_relic_drops(data, query, exact=False):
-    _parser.parse(data)
-    return _parser.iter_relic_drops(query, exact)
+def iter_mod_drops(parser, data, query, exact=False):
+    parser._data = data
+    parser._recache()
+    return parser._iter_mod_drops(query, exact)
 
 
-def iter_mod_drops(data, query, exact=False):
-    _parser.parse(data)
-    return _parser.iter_mod_drops(query, exact)
+def iter_blueprint_drops(parser, data, query, exact=False):
+    parser._data = data
+    parser._recache()
+    return parser._iter_blueprint_drops(query, exact)
 
 
-def iter_blueprint_drops(data, query, exact=False):
-    _parser.parse(data)
-    return _parser.iter_blueprint_drops(query, exact)
+def iter_key_drops(parser, data, query, exact=False):
+    parser._data = data
+    parser._recache()
+    return parser._iter_key_drops(query, exact)
 
 
-def iter_key_drops(data, query, exact=False):
-    _parser.parse(data)
-    return _parser.iter_key_drops(query, exact)
+def iter_transient_drops(parser, data, query, exact=False):
+    parser._data = data
+    parser._recache()
+    return parser._iter_transient_drops(query, exact)
 
 
-def iter_transient_drops(data, query, exact=False):
-    _parser.parse(data)
-    return _parser.iter_transient_drops(query, exact)
+def iter_sortie_drops(parser, data, query, exact=False):
+    parser._data = data
+    parser._recache()
+    return parser._iter_sortie_drops(query, exact)
 
 
-def iter_sortie_drops(data, query, exact=False):
-    _parser.parse(data)
-    return _parser.iter_sortie_drops(query, exact)
+def iter_cetus_drops(parser, data, query, exact=False):
+    parser._data = data
+    parser._recache()
+    return parser._iter_cetus_drops(query, exact)
 
 
-def iter_cetus_drops(data, query, exact=False):
-    _parser.parse(data)
-    return _parser.iter_cetus_drops(query, exact)
+def search_items(parser, data, query, exact=False):
+    parser._data = data
+    parser._recache()
+    return parser.search_items(query, exact)
 
 
-def search_items(data, query, exact=False):
-    _parser.parse(data)
-    return _parser.search_items(query, exact)
+@pytest.fixture
+def parser():
+    return DropDataParser()
 
 
 @pytest.fixture
@@ -173,156 +189,156 @@ class TestParseQueries:
 
 
 class TestGetUniqueItems:
-    def test_extracts_items_from_mission_rewards_dict(self, sample_data):
-        items = get_unique_items(sample_data)
+    def test_extracts_items_from_mission_rewards_dict(self, parser, sample_data):
+        items = get_unique_items(parser, sample_data)
         assert "Scindo" in items
         assert "Neurodes" in items
         assert "Forma" in items
 
-    def test_extracts_items_from_mission_rewards_list(self, sample_data):
-        items = get_unique_items(sample_data)
+    def test_extracts_items_from_mission_rewards_list(self, parser, sample_data):
+        items = get_unique_items(parser, sample_data)
         assert "Forma" in items
 
-    def test_extracts_items_from_relics(self, sample_data):
-        items = get_unique_items(sample_data)
+    def test_extracts_items_from_relics(self, parser, sample_data):
+        items = get_unique_items(parser, sample_data)
         assert "Scindo Prime Handle" in items
         assert "Forma Blueprint" in items
 
-    def test_extracts_items_from_mod_locations(self, sample_data):
-        items = get_unique_items(sample_data)
+    def test_extracts_items_from_mod_locations(self, parser, sample_data):
+        items = get_unique_items(parser, sample_data)
         assert "Bite" in items
 
-    def test_extracts_items_from_blueprint_locations(self, sample_data):
-        items = get_unique_items(sample_data)
+    def test_extracts_items_from_blueprint_locations(self, parser, sample_data):
+        items = get_unique_items(parser, sample_data)
         assert "Lens" in items
 
-    def test_extracts_items_from_key_rewards(self, sample_data):
-        items = get_unique_items(sample_data)
+    def test_extracts_items_from_key_rewards(self, parser, sample_data):
+        items = get_unique_items(parser, sample_data)
         assert "Credits" in items
 
-    def test_extracts_items_from_transient_rewards(self, sample_data):
-        items = get_unique_items(sample_data)
+    def test_extracts_items_from_transient_rewards(self, parser, sample_data):
+        items = get_unique_items(parser, sample_data)
         assert "Kuva" in items
 
-    def test_extracts_items_from_sortie_rewards(self, sample_data):
-        items = get_unique_items(sample_data)
+    def test_extracts_items_from_sortie_rewards(self, parser, sample_data):
+        items = get_unique_items(parser, sample_data)
         assert "Argon Crystal" in items
 
-    def test_extracts_items_from_cetus_bounty_rewards(self, sample_data):
-        items = get_unique_items(sample_data)
+    def test_extracts_items_from_cetus_bounty_rewards(self, parser, sample_data):
+        items = get_unique_items(parser, sample_data)
         assert "Cetus Wrait" in items
 
-    def test_returns_sorted_list(self, sample_data):
-        items = get_unique_items(sample_data)
+    def test_returns_sorted_list(self, parser, sample_data):
+        items = get_unique_items(parser, sample_data)
         assert items == sorted(items)
 
 
 class TestGetUniqueMissionTypes:
-    def test_extracts_mission_types(self, sample_data):
-        mission_types = get_unique_mission_types(sample_data)
+    def test_extracts_mission_types(self, parser, sample_data):
+        mission_types = get_unique_mission_types(parser, sample_data)
         assert "Survival" in mission_types
         assert "Exterminate" in mission_types
         assert "Capture" in mission_types
 
-    def test_returns_sorted_list(self, sample_data):
-        mission_types = get_unique_mission_types(sample_data)
+    def test_returns_sorted_list(self, parser, sample_data):
+        mission_types = get_unique_mission_types(parser, sample_data)
         assert mission_types == sorted(mission_types)
 
 
 class TestIterMissionDrops:
-    def test_fuzzy_match_returns_results(self, sample_data):
-        results = iter_mission_drops(sample_data, "Scindo")
+    def test_fuzzy_match_returns_results(self, parser, sample_data):
+        results = iter_mission_drops(parser, sample_data, "Scindo")
         assert len(results) == 2
 
-    def test_exact_match_returns_results(self, sample_data):
-        results = iter_mission_drops(sample_data, "Scindo", exact=True)
+    def test_exact_match_returns_results(self, parser, sample_data):
+        results = iter_mission_drops(parser, sample_data, "Scindo", exact=True)
         assert len(results) == 2
 
-    def test_exact_match_no_partial(self, sample_data):
-        results = iter_mission_drops(sample_data, "Scind", exact=True)
+    def test_exact_match_no_partial(self, parser, sample_data):
+        results = iter_mission_drops(parser, sample_data, "Scind", exact=True)
         assert len(results) == 0
 
-    def test_case_insensitive(self, sample_data):
-        results = iter_mission_drops(sample_data, "scindo")
+    def test_case_insensitive(self, parser, sample_data):
+        results = iter_mission_drops(parser, sample_data, "scindo")
         assert len(results) == 2
 
-    def test_dict_rewards_have_rotation(self, sample_data):
-        results = iter_mission_drops(sample_data, "Scindo")
+    def test_dict_rewards_have_rotation(self, parser, sample_data):
+        results = iter_mission_drops(parser, sample_data, "Scindo")
         rotations = [r.rotation for r in results]
         assert "C" in rotations
         assert "A" in rotations
 
-    def test_list_rewards_have_dash_rotation(self, sample_data):
-        results = iter_mission_drops(sample_data, "Forma")
+    def test_list_rewards_have_dash_rotation(self, parser, sample_data):
+        results = iter_mission_drops(parser, sample_data, "Forma")
         assert len(results) == 1
         assert results[0].rotation == "-"
 
 
 class TestIterRelicDrops:
-    def test_returns_relic_drops(self, sample_data):
-        results = iter_relic_drops(sample_data, "Scindo")
+    def test_returns_relic_drops(self, parser, sample_data):
+        results = iter_relic_drops(parser, sample_data, "Scindo")
         assert len(results) == 2
 
-    def test_location_contains_relic_info(self, sample_data):
-        results = iter_relic_drops(sample_data, "Scindo")
+    def test_location_contains_relic_info(self, parser, sample_data):
+        results = iter_relic_drops(parser, sample_data, "Scindo")
         locations = [r.location for r in results]
         assert any("Lith" in loc for loc in locations)
         assert any("Meso" in loc for loc in locations)
 
-    def test_state_is_preserved(self, sample_data):
-        results = iter_relic_drops(sample_data, "Scindo")
+    def test_state_is_preserved(self, parser, sample_data):
+        results = iter_relic_drops(parser, sample_data, "Scindo")
         rotations = [r.rotation for r in results]
         assert "Intact" in rotations
         assert "Radiant" in rotations
 
 
 class TestIterModDrops:
-    def test_finds_mod_drops(self, sample_data):
-        results = iter_mod_drops(sample_data, "Bite")
+    def test_finds_mod_drops(self, parser, sample_data):
+        results = iter_mod_drops(parser, sample_data, "Bite")
         assert len(results) == 2
 
-    def test_mod_location_format(self, sample_data):
-        results = iter_mod_drops(sample_data, "Bite")
+    def test_mod_location_format(self, parser, sample_data):
+        results = iter_mod_drops(parser, sample_data, "Bite")
         locations = [r.location for r in results]
         assert all("Mod drop:" in loc for loc in locations)
 
 
 class TestIterBlueprintDrops:
-    def test_finds_blueprint_drops(self, sample_data):
-        results = iter_blueprint_drops(sample_data, "Lens")
+    def test_finds_blueprint_drops(self, parser, sample_data):
+        results = iter_blueprint_drops(parser, sample_data, "Lens")
         assert len(results) == 1
 
 
 class TestIterKeyDrops:
-    def test_finds_key_drops(self, sample_data):
-        results = iter_key_drops(sample_data, "Credits")
+    def test_finds_key_drops(self, parser, sample_data):
+        results = iter_key_drops(parser, sample_data, "Credits")
         assert len(results) == 1
 
 
 class TestIterTransientDrops:
-    def test_finds_transient_drops(self, sample_data):
-        results = iter_transient_drops(sample_data, "Kuva")
+    def test_finds_transient_drops(self, parser, sample_data):
+        results = iter_transient_drops(parser, sample_data, "Kuva")
         assert len(results) == 1
 
 
 class TestIterSortieDrops:
-    def test_finds_sortie_drops(self, sample_data):
-        results = iter_sortie_drops(sample_data, "Argon Crystal")
+    def test_finds_sortie_drops(self, parser, sample_data):
+        results = iter_sortie_drops(parser, sample_data, "Argon Crystal")
         assert len(results) == 1
 
 
 class TestIterCetusDrops:
-    def test_finds_cetus_drops(self, sample_data):
-        results = iter_cetus_drops(sample_data, "Cetus Wrait")
+    def test_finds_cetus_drops(self, parser, sample_data):
+        results = iter_cetus_drops(parser, sample_data, "Cetus Wrait")
         assert len(results) == 1
 
 
 class TestSearchItems:
-    def test_combines_all_sources(self, sample_data):
-        results = search_items(sample_data, "Scindo")
+    def test_combines_all_sources(self, parser, sample_data):
+        results = search_items(parser, sample_data, "Scindo")
         assert len(results) >= 4
 
-    def test_sorts_by_chance_descending(self, sample_data):
-        results = search_items(sample_data, "Scindo")
+    def test_sorts_by_chance_descending(self, parser, sample_data):
+        results = search_items(parser, sample_data, "Scindo")
         chances = [r.chance for r in results]
         assert chances == sorted(chances, reverse=True)
