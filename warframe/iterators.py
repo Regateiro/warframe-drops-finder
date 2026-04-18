@@ -93,7 +93,7 @@ def iter_blueprint_drops(data: dict[str, Any], query: str, exact: bool = False) 
         for enemy in bp_loc.get("enemies", []):
             item_name = bp_name
             if match_fn(item_name):
-                results.append(DropResult(item_name, enemy["chance"], f"Blueprint: {enemy['enemy_name']}", "", "-"))
+                results.append(DropResult(item_name, enemy["chance"], f"Blueprint: {enemy['enemyName']}", "", "-"))
 
     return results
 
