@@ -6,7 +6,6 @@
     <title>Warframe Drop Locations</title>
     <link rel="icon" type="image/png" href="{web_root}/static/favicon.png">
     <link rel="stylesheet" href="{web_root}/static/style.css">
-    <script src="{web_root}/static/autocomplete.js"></script>
     <script src="{web_root}/static/sort.js"></script>
     <script>var WEB_ROOT = "{web_root}";</script>
 </head>
@@ -24,8 +23,9 @@
             <div class="drawer-content">
                 <label>
                     Mission Type Filter:
-                    <input type="text" name="mission_type" value="{mission_type}" placeholder="Mission type (e.g. Defense, Survival)">
+                    <input type="text" name="mission_type" value="{mission_type}" placeholder="Mission type (e.g. Defense, Survival)" list="mission-types-list">
                 </label>
+                <datalist id="mission-types-list"></datalist>
                 <label>
                     <input type="checkbox" name="exact" {exact_checked}> Exact match
                 </label>

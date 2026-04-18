@@ -14,41 +14,27 @@ document.addEventListener('DOMContentLoaded', () => {
         drawer.classList.add('open');
     }
 
-    loadSuggestions();
+    loadMissionTypeSuggestions();
 });
 
 let suggestionsLoaded = false;
 
-async function loadSuggestions() {
+async function loadMissionTypeSuggestions() {
     if (suggestionsLoaded) return;
     suggestionsLoaded = true;
 
     try {
-        const itemsRes = await fetch(WEB_ROOT + '/api/suggest-items?q=' + new Date().getTime());
-        const items = await itemsRes.json();
-        const itemsList = document.getElementById('items-list');
-        items.forEach(item => {
-            const opt = document.createElement('option');
-            opt.value = item;
-            opt.setAttribute('data-value', item);
-            itemsList.appendChild(opt);
-        });
-        window._itemSuggestions = items;
-        console.log('Loaded', items.length, 'item suggestions');
-
-        const missionTypesRes = await fetch(WEB_ROOT + '/api/suggest-mission-types?q=' + new Date().getTime());
+        const missionTypesRes = await fetch(WEB_ROOT + '/api/suggest-mission-types?q=' + Date.now());
         const missionTypes = await missionTypesRes.json();
         const missionTypesList = document.getElementById('mission-types-list');
         missionTypes.forEach(mt => {
             const opt = document.createElement('option');
             opt.value = mt;
-            opt.setAttribute('data-value', mt);
             missionTypesList.appendChild(opt);
         });
-        window._missionTypeSuggestions = missionTypes;
         console.log('Loaded', missionTypes.length, 'mission type suggestions');
     } catch (e) {
-        console.error('Failed to load suggestions:', e);
+        console.error('Failed to load mission type suggestions:', e);
     }
 }
 
