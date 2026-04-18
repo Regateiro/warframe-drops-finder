@@ -7,12 +7,11 @@
     <link rel="icon" type="image/png" href="{web_root}/static/favicon.png">
     <link rel="stylesheet" href="{web_root}/static/style.css">
     <script src="{web_root}/static/autocomplete.js"></script>
-    <script>var WEB_ROOT = "{web_root}";</script>
 </head>
 <body>
     <div class="header">
         <h1>Warframe Drop Locations</h1>
-        <a class="btn" href="{web_root}/?refresh=1&q={query}">Refresh Data</a>
+        <a class="btn" href="{web_root}/?refresh=1&q={query}" title="Refresh drop data if older than 24 hours">Refresh Data</a>
     </div>
     <form method="get" action="{web_root}/">
         <input type="text" name="q" placeholder="Search for an item..." value="{query}" autofocus>
