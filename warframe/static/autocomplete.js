@@ -55,7 +55,7 @@ function setupAutocomplete(input, api, onSelect) {
         dropdown.style.display = 'block';
     }
 
-    function select(value) {
+    function select(value, shouldSubmit = true) {
         let current = input.value;
         const lastComma = current.lastIndexOf(',');
         if (lastComma >= 0) {
@@ -64,7 +64,7 @@ function setupAutocomplete(input, api, onSelect) {
             input.value = value;
         }
         dropdown.style.display = 'none';
-        if (onSelect) onSelect(value);
+        if (shouldSubmit && onSelect) onSelect(value);
     }
 
     let debounceTimer;
@@ -93,7 +93,7 @@ function setupAutocomplete(input, api, onSelect) {
             idx = idx < 0 ? items.length - 1 : Math.max(idx - 1, 0);
         } else if (e.key === 'Enter' && idx >= 0) {
             e.preventDefault();
-            select(items[idx].textContent);
+            select(items[idx].textContent, false);
             return;
         } else return;
         items.forEach(li => li.style.background = '');
