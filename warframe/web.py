@@ -144,19 +144,11 @@ def format_multi_table_html(results: list, queries: list[str], max_results: int)
     # Sort locations by score (more items, higher chance first)
     sorted_locations = sorted(by_location.items(), key=location_score, reverse=True)
 
-    def make_columns(item_dict: dict) -> list[str]:
-        """Extract item names from dict for column headers."""
-        cols = []
-        for item in queries:
-            if item in item_dict:
-                cols.append(item)
-        return cols
-
     # Determine column order: for multi-query, use query order; otherwise alphabetical
     if len(queries) > 1:
         item_columns = []
         for _, items_dict in by_location.items():
-            for col in make_columns(items_dict):
+            for col in items_dict:
                 if col not in item_columns:
                     item_columns.append(col)
     else:
