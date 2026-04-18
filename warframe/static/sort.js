@@ -99,26 +99,25 @@ function sortTable(table, colIndex) {
     // Preserve header row during sort
     const header = rows.shift();
 
+    // If unsorted, restore original order by sorting on the first column (#)
     if (state === 'unsorted') {
-        // Restore original order
-        rows.unshift(header);
-        rows.forEach(row => tbody.appendChild(row));
-    } else {
-        const asc = state === 'asc';
-        rows.sort((a, b) => {
-            const aVal = a.cells[colIndex].textContent.trim();
-            const bVal = b.cells[colIndex].textContent.trim();
-            const aNum = parseFloat(aVal);
-            const bNum = parseFloat(bVal);
-
-            // Numeric comparison for numbers, string comparison otherwise
-            if (!isNaN(aNum) && !isNaN(bNum)) {
-                return asc ? aNum - bNum : bNum - aNum;
-            }
-            return asc ? aVal.localeCompare(bVal) : bVal.localeCompare(aVal);
-        });
-
-        rows.unshift(header);
-        rows.forEach(row => tbody.appendChild(row));
+        colIndex = 0;
     }
+
+    const asc = state === 'asc';
+    rows.sort((a, b) => {
+        const aVal = a.cells[colIndex].textContent.trim();
+        const bVal = b.cells[colIndex].textContent.trim();
+        const aNum = parseFloat(aVal);
+        const bNum = parseFloat(bVal);
+
+        // Numeric comparison for numbers, string comparison otherwise
+        if (!isNaN(aNum) && !isNaN(bNum)) {
+            return asc ? aNum - bNum : bNum - aNum;
+        }
+        return asc ? aVal.localeCompare(bVal) : bVal.localeCompare(aVal);
+    });
+
+    rows.unshift(header);
+    rows.forEach(row => tbody.appendChild(row));
 }
