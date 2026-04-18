@@ -23,23 +23,27 @@ async function loadMissionTypeSuggestions() {
     if (suggestionsLoaded) return;
     suggestionsLoaded = true;
 
-    console.log('Loading mission type suggestions...');
     const missionTypesList = document.getElementById('mission-types-list');
-    console.log('datalist element:', missionTypesList);
+    const itemsList = document.getElementById('items-list');
 
     try {
-        const missionTypesRes = await fetch(WEB_ROOT + '/api/suggest-mission-types?q=A');
-        console.log('response status:', missionTypesRes.status);
-        const missionTypes = await missionTypesRes.json();
-        console.log('got mission types:', missionTypes);
-        missionTypes.forEach(mt => {
+        const mtypes = await fetch(WEB_ROOT + '/api/suggest-mission-types?q=A').then(r => r.json());
+        mtypes.forEach(mt => {
             const opt = document.createElement('option');
             opt.value = mt;
             missionTypesList.appendChild(opt);
         });
-        console.log('Populated datalist with', missionTypes.length, 'items');
+
+        const items = await fetch(WEB_ROOT + '/api/suggest-items?q=_').then(r => r.json());
+        items.forEach(item => {
+            const opt = document.createElement('option');
+            opt.value = item;
+            itemsList.appendChild(opt);
+        });
+
+        console.log('Loaded suggestions:', mtypes.length, 'types,', items.length, 'items');
     } catch (e) {
-        console.error('Failed to load mission type suggestions:', e);
+        console.error('Failed to load suggestions:', e);
     }
 }
 
