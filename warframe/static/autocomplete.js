@@ -82,9 +82,12 @@ function setupAutocomplete(input, api, onSelect) {
 
     input.addEventListener('blur', () => setTimeout(() => dropdown.style.display = 'none', 150));
     input.addEventListener('keydown', (e) => {
+        console.log('keydown:', e.key);
         if (e.key === 'Enter') {
+            console.log('Enter pressed, dropdown open:', dropdown.style.display);
             const items = Array.from(dropdown.children);
             let idx = items.findIndex(li => li.style.background !== '');
+            console.log('selected idx:', idx);
             if (idx >= 0) {
                 e.preventDefault();
                 select(items[idx].textContent, false);
