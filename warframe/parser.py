@@ -28,13 +28,14 @@ class DropData:
 class DropDataParser:
     """Parser for Warframe drop table JSON data.
 
-    Provides caching internally.
+    Provides caching internally to avoid recomputing on every request.
+    Only the refresh(), get_drop_data(), and search_items() methods
+    are intended for public use; all other methods are internal.
     """
 
     def __init__(self):
         self._cache: DropData | None = None
         self._data: dict[str, Any] | None = None
-        # Initial load of data and cache
         self.refresh()
 
     def refresh(self, force: bool = False) -> None:
@@ -58,19 +59,11 @@ class DropDataParser:
         )
 
     def get_drop_data(self) -> DropData:
-        """Parse raw API data into structured DropData.
-        Uses cached result if available.
-
-        Args:
-            data: Raw JSON data from the API.
+        """Get parsed drop data from the cache.
 
         Returns:
             DropData with extracted items and mission types.
         """
-        # If cache is empty, parse and populate it
-        if self._cache is None:
-            self._recache()
-
         # Return cached data
         return self._cache
 
@@ -137,23 +130,42 @@ class DropDataParser:
         return sorted(mission_types)
 
     def _make_match_fn(self, query: str, exact: bool) -> Callable[[str], bool]:
+        """Create a case-insensitive matching function for item names.
+
+        Args:
+            query: The search string.
+            exact: If True, match exact string; otherwise substring match.
+
+        Returns:
+            A function that takes an item name and returns True if it matches.
+        """
         return lambda name: query.lower() == name.lower() if exact else query.lower() in name.lower()
 
     def search_items(self, query: str, exact: bool = False) -> list[DropResult]:
+        """Search for items matching the query across all drop sources.
+
+        Args:
+            query: The search string to match against item names.
+            exact: If True, require exact match; otherwise substring match.
+
+        Returns:
+            List of DropResult sorted by drop chance (highest first).
+        """
         iterators = [
-            self.iter_mission_drops,
-            self.iter_relic_drops,
-            self.iter_mod_drops,
-            self.iter_blueprint_drops,
-            self.iter_key_drops,
-            self.iter_transient_drops,
-            self.iter_sortie_drops,
-            self.iter_cetus_drops,
+            self._iter_mission_drops,
+            self._iter_relic_drops,
+            self._iter_mod_drops,
+            self._iter_blueprint_drops,
+            self._iter_key_drops,
+            self._iter_transient_drops,
+            self._iter_sortie_drops,
+            self._iter_cetus_drops,
         ]
         results = list(chain.from_iterable(it(query, exact) for it in iterators))
         return sorted(results, key=lambda x: x.chance, reverse=True)
 
-    def iter_mission_drops(self, query: str, exact: bool = False) -> list[DropResult]:
+    def _iter_mission_drops(self, query: str, exact: bool = False) -> list[DropResult]:
+        """Internal: iterate mission drop results matching query."""
         data = self._data
         results: list[DropResult] = []
         match_fn = self._make_match_fn(query, exact)
@@ -178,7 +190,8 @@ class DropDataParser:
 
         return results
 
-    def iter_relic_drops(self, query: str, exact: bool = False) -> list[DropResult]:
+    def _iter_relic_drops(self, query: str, exact: bool = False) -> list[DropResult]:
+        """Internal: iterate relic drop results matching query."""
         data = self._data
         results: list[DropResult] = []
         match_fn = self._make_match_fn(query, exact)
@@ -194,7 +207,8 @@ class DropDataParser:
 
         return results
 
-    def iter_mod_drops(self, query: str, exact: bool = False) -> list[DropResult]:
+    def _iter_mod_drops(self, query: str, exact: bool = False) -> list[DropResult]:
+        """Internal: iterate mod drop results matching query."""
         data = self._data
         results: list[DropResult] = []
         match_fn = self._make_match_fn(query, exact)
@@ -208,7 +222,8 @@ class DropDataParser:
 
         return results
 
-    def iter_blueprint_drops(self, query: str, exact: bool = False) -> list[DropResult]:
+    def _iter_blueprint_drops(self, query: str, exact: bool = False) -> list[DropResult]:
+        """Internal: iterate blueprint drop results matching query."""
         data = self._data
         results: list[DropResult] = []
         match_fn = self._make_match_fn(query, exact)
@@ -222,7 +237,8 @@ class DropDataParser:
 
         return results
 
-    def iter_key_drops(self, query: str, exact: bool = False) -> list[DropResult]:
+    def _iter_key_drops(self, query: str, exact: bool = False) -> list[DropResult]:
+        """Internal: iterate key drop results matching query."""
         data = self._data
         results: list[DropResult] = []
         match_fn = self._make_match_fn(query, exact)
@@ -239,7 +255,8 @@ class DropDataParser:
 
         return results
 
-    def iter_transient_drops(self, query: str, exact: bool = False) -> list[DropResult]:
+    def _iter_transient_drops(self, query: str, exact: bool = False) -> list[DropResult]:
+        """Internal: iterate transient reward drop results matching query."""
         data = self._data
         results: list[DropResult] = []
         match_fn = self._make_match_fn(query, exact)
@@ -254,7 +271,8 @@ class DropDataParser:
 
         return results
 
-    def iter_sortie_drops(self, query: str, exact: bool = False) -> list[DropResult]:
+    def _iter_sortie_drops(self, query: str, exact: bool = False) -> list[DropResult]:
+        """Internal: iterate sortie drop results matching query."""
         data = self._data
         results: list[DropResult] = []
         match_fn = self._make_match_fn(query, exact)
@@ -266,7 +284,8 @@ class DropDataParser:
 
         return results
 
-    def iter_cetus_drops(self, query: str, exact: bool = False) -> list[DropResult]:
+    def _iter_cetus_drops(self, query: str, exact: bool = False) -> list[DropResult]:
+        """Internal: iterate Cetus bounty drop results matching query."""
         data = self._data
         results: list[DropResult] = []
         match_fn = self._make_match_fn(query, exact)
