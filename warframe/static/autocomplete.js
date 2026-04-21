@@ -174,8 +174,21 @@ function sortTable(table, col) {
     // If unsorted, default to original order (first column) for sorting
     else { col = 0; }
 
+    // Helper to extract percentage from "Rotation:X.XX%" format
+    function extractChance(cell) {
+        const m = cell.textContent.trim().match(/:(\d+\.?\d*)%/);
+        return m ? parseFloat(m[1]) : NaN;
+    }
+
+    // Check if this column uses the chance format
+    const isChance = rows.length && rows[0].cells[col].classList.contains('chance');
+
     // Sort rows
     rows.sort((a, b) => {
+        if (isChance) {
+            const an = extractChance(a.cells[col]), bn = extractChance(b.cells[col]);
+            return state !== 'desc' ? an - bn : bn - an;
+        }
         const av = a.cells[col].textContent.trim(), bv = b.cells[col].textContent.trim();
         const an = parseFloat(av), bn = parseFloat(bv);
         return isNaN(an) || isNaN(bn)
