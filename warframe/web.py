@@ -108,8 +108,8 @@ def run_search(query: str, exact: bool) -> list:
 def format_multi_table_html(results: list, queries: list[str], max_results: int) -> str:
     """Format search results as HTML table.
 
-    Groups results by location and mission type, showing the best drop chance
-    for each item/rotation combination. Creates a table suitable for
+    Groups results by location and mission type, showing all rotations with their
+    respective drop chances (e.g. "B:6.67%/C:11.06%"). Creates a table suitable for
     display on the search results page.
 
     Grouping logic:
@@ -126,7 +126,7 @@ def format_multi_table_html(results: list, queries: list[str], max_results: int)
         HTML string containing the results table.
     """
     # Group results: (location, mission_type) -> item -> rotation -> chance
-    # defaultdict with lambda creates nested dicts automatically
+    # defaultdict with lambda creates nested dicts automatically. Keep highest chance per rotation.
     by_location = defaultdict(lambda: defaultdict(dict))
     for result in results:
         key = (result.location, result.mission_type)
@@ -166,10 +166,10 @@ def format_multi_table_html(results: list, queries: list[str], max_results: int)
         row_cells = f"<td>{idx}</td><td>{location}</td><td>{mission_type}</td>"
         for item in item_columns:
             if item in items_dict:
-                # Show best rotation and chance for this item
+                # Show all rotations and chances for this item
                 rotations = items_dict[item]
-                best_rot = max(rotations.items(), key=lambda x: x[1])
-                row_cells += f'<td class="chance">{best_rot[0]}:{best_rot[1]:.2f}%</td>'
+                rot_strs = [f"{rot}:{chance:.2f}%" for rot, chance in sorted(rotations.items())]
+                row_cells += f'<td class="chance">{"/".join(rot_strs)}</td>'
             else:
                 row_cells += "<td>-</td>"
         rows.append(f"<tr>{row_cells}</tr>")
