@@ -169,7 +169,7 @@ def format_multi_table_html(results: list, queries: list[str], max_results: int)
                 # Show all rotations and chances for this item
                 rotations = items_dict[item]
                 rot_strs = [f"{rot}:{chance:.2f}%" for rot, chance in sorted(rotations.items())]
-                row_cells += f'<td class="chance">{"/".join(rot_strs)}</td>'
+                row_cells += f'<td class="chance">{" ".join(rot_strs)}</td>'
             else:
                 row_cells += "<td>-</td>"
         rows.append(f"<tr>{row_cells}</tr>")
