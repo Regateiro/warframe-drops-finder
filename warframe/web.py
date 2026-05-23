@@ -175,14 +175,11 @@ def format_multi_table_html(results: list, queries: list[str], max_results: int)
     # Build header row with item names
     headers = "".join(f"<th>{item}</th>" for item in item_columns)
 
-    # Compute weights per location for data attributes
-    loc_weights = {loc: mission_weight(items_dict) for (loc, _), items_dict in by_location.items()}
-
     # Build data rows
     rows = []
     for idx, ((location, mission_type), items_dict) in enumerate(sorted_locations if max_results == 0 else sorted_locations[:max_results], 1):
         row_cells = f"<td>{idx}</td><td>{location}</td><td>{mission_type}</td>"
-        mw = loc_weights[(location, mission_type)]
+        mw = mission_weight(items_dict)
         for item in item_columns:
             if item in items_dict:
                 rotations = items_dict[item]
