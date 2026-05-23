@@ -58,11 +58,7 @@ def fetch_drop_data(force_refresh: bool = False, force_load: bool = False) -> tu
     if not os.path.exists(CACHE_FILE):
         return refresh_drop_data(), True
     
-    # Cache exists — Force load from disk if requested
-    if force_load:
-        return load_drop_data()
-
-    # Check age and expiration status
+    # Cache exists — check expiration before deciding whether to force-load or fetch fresh
     disk_cache_mtime = os.path.getmtime(CACHE_FILE)
     disk_cache_age = time.time() - disk_cache_mtime
     disk_cache_expired = disk_cache_age > CACHE_MAX_AGE  # > 24 hours old
@@ -70,6 +66,10 @@ def fetch_drop_data(force_refresh: bool = False, force_load: bool = False) -> tu
     # Expired cache always refreshes via API
     if disk_cache_expired:
         return refresh_drop_data(), True
+
+    # Force load from disk if needed
+    if force_load:
+        return load_drop_data()
 
     # Guard against force_refresh misuse: if cache is less than 5 minutes old,
     # always use it regardless of the force_refresh flag.
