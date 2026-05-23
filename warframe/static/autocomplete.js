@@ -178,16 +178,6 @@ function sortTable(table, col) {
         return m ? parseFloat(m[1]) : NaN;
     }
 
-    // When unsorted, re-apply default sort: descending by mission weight
-    if (state === 'unsorted') {
-        rows.sort((a, b) => {
-            const aW = parseFloat(a.getAttribute('data-weight')) || 0;
-            const bW = parseFloat(b.getAttribute('data-weight')) || 0;
-            return bW - aW; // descending
-        });
-        return;
-    }
-
     // Check if this column uses the chance format
     const isChance = rows.length && rows[0].cells[col].classList.contains('chance');
     // Get data attribute name for item columns (e.g. "data-Axi V14 Relic")
@@ -197,10 +187,14 @@ function sortTable(table, col) {
         if (thText !== '-') cellDataAttr = 'data-' + thText;
     }
 
-    // Sort rows by data-weight for default column, or item-specific weight for chance columns
+    // Sort rows: unsorted always falls back to col 0 (data-weight), otherwise use column logic
     rows.sort((a, b) => {
         let an, bn;
-        if (isChance && cellDataAttr) {
+        if (state === 'unsorted') {
+            const aNum = parseFloat(a.cells[0].textContent.trim()) || -Infinity;
+            const bNum = parseFloat(b.cells[0].textContent.trim()) || -Infinity;
+            return aNum - bNum;
+        } else if (isChance && cellDataAttr) {
             const aVal = a.cells[col].getAttribute(cellDataAttr);
             const bVal = b.cells[col].getAttribute(cellDataAttr);
             // Rows with data attr come first in desc, last in asc
