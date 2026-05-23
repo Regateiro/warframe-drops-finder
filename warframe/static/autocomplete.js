@@ -172,12 +172,6 @@ function sortTable(table, col) {
     table.querySelectorAll('th').forEach(h => h.classList.remove('asc', 'desc'));
     if (state !== 'unsorted') th.classList.add(state);
 
-    // Helper to extract percentage from "Rotation:X.XX%" format
-    function extractChance(cell) {
-        const m = cell.textContent.trim().match(/:(\d+\.?\d*)%/);
-        return m ? parseFloat(m[1]) : NaN;
-    }
-
     // Check if this column uses the chance format
     const isChance = rows.length && rows[0].cells[col].classList.contains('chance');
     // Get data attribute name for item columns (e.g. "data-Axi V14 Relic")
@@ -187,7 +181,7 @@ function sortTable(table, col) {
         if (thText !== '-') cellDataAttr = 'data-' + thText;
     }
 
-    // Sort rows: unsorted always falls back to col 0 (data-weight), otherwise use column logic
+    // Sort rows: unsorted always falls back to col 0 text, chance columns use data attrs, default uses cell text
     rows.sort((a, b) => {
         let an, bn;
         if (state === 'unsorted') {
@@ -197,19 +191,16 @@ function sortTable(table, col) {
         } else if (isChance && cellDataAttr) {
             const aVal = a.cells[col].getAttribute(cellDataAttr);
             const bVal = b.cells[col].getAttribute(cellDataAttr);
-            // Rows with data attr come first in desc, last in asc
-            if (aVal === null || aVal === '') an = -Infinity;
-            else an = parseFloat(aVal) || 0;
-            if (bVal === null || bVal === '') bn = -Infinity;
-            else bn = parseFloat(bVal) || 0;
+            // Rows without data go first in asc, last in desc
+            const missing = state === 'desc' ? Infinity : -Infinity;
+            an = (aVal === null || aVal === '') ? missing : parseFloat(aVal);
+            bn = (bVal === null || bVal === '') ? missing : parseFloat(bVal);
+            return state === 'desc' ? bn - an : an - bn;
         } else {
-            // Default sort uses data-weight for numeric comparison
-            const aW = a.getAttribute('data-weight');
-            const bW = b.getAttribute('data-weight');
-            an = (aW !== null && aW !== '') ? parseFloat(aW) || 0 : -Infinity;
-            bn = (bW !== null && bW !== '') ? parseFloat(bW) || 0 : -Infinity;
+            // Default sort by cell text (natural ordering via localeCompare)
+            const cmp = a.cells[col].textContent.localeCompare(b.cells[col].textContent, undefined, { numeric: true });
+            return state === 'desc' ? -cmp : cmp;
         }
-        return state === 'desc' ? bn - an : an - bn;
     });
 
     // Append sorted rows
