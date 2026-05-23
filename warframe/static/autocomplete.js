@@ -171,7 +171,6 @@ function sortTable(table, col) {
     // Clear existing sort classes
     table.querySelectorAll('th').forEach(h => h.classList.remove('asc', 'desc'));
     if (state !== 'unsorted') th.classList.add(state);
-    // If unsorted, default to original order (first column) for sorting
     else { col = 0; }
 
     // Helper to extract percentage from "Rotation:X.XX%" format
@@ -182,18 +181,31 @@ function sortTable(table, col) {
 
     // Check if this column uses the chance format
     const isChance = rows.length && rows[0].cells[col].classList.contains('chance');
+    // Get data attribute name for item columns (e.g. "data-Axi V14 Relic")
+    let cellDataAttr = null;
+    if (isChance) {
+        const thText = table.querySelectorAll('th')[col].textContent.trim();
+        if (thText !== '-') cellDataAttr = 'data-' + thText;
+    }
 
     // Sort rows
     rows.sort((a, b) => {
-        if (isChance) {
-            const an = extractChance(a.cells[col]), bn = extractChance(b.cells[col]);
-            return state !== 'desc' ? an - bn : bn - an;
+        let an, bn;
+        if (isChance && cellDataAttr) {
+            an = parseFloat(a.cells[col].getAttribute(cellDataAttr)) || 0;
+            bn = parseFloat(b.cells[col].getAttribute(cellDataAttr)) || 0;
+        } else if (col === 0) {
+            // Default sort uses data-weight for numeric comparison
+            an = parseFloat(a.getAttribute('data-weight')) || 0;
+            bn = parseFloat(b.getAttribute('data-weight')) || 0;
+        } else {
+            const av = a.cells[col].textContent.trim(), bv = b.cells[col].textContent.trim();
+            an = parseFloat(av), bn = parseFloat(bv);
+            if (isNaN(an) || isNaN(bn)) {
+                return state !== 'desc' ? av.localeCompare(bv) : bv.localeCompare(av);
+            }
         }
-        const av = a.cells[col].textContent.trim(), bv = b.cells[col].textContent.trim();
-        const an = parseFloat(av), bn = parseFloat(bv);
-        return isNaN(an) || isNaN(bn)
-            ? (state !== 'desc' ? av.localeCompare(bv) : bv.localeCompare(av))
-            : (state !== 'desc' ? an - bn : bn - an);
+        return state !== 'desc' ? an - bn : bn - an;
     });
 
     // Append sorted rows

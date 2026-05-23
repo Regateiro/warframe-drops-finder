@@ -16,10 +16,10 @@ The application:
 
 # Standard library imports
 import os
-from urllib.parse import urlencode
 
 # defaultdict creates nested dicts automatically for grouping results
 from collections import defaultdict
+from urllib.parse import urlencode
 
 # Third-party imports from requirements
 from dotenv import load_dotenv
@@ -116,7 +116,8 @@ def format_multi_table_html(results: list, queries: list[str], max_results: int)
     Grouping logic:
     - Results are grouped by (location, mission_type) tuple
     - Each item can have multiple rotations, keep highest chance
-    - Locations sorted by (# items, best chance) for relevance
+    - Locations sorted by query weight (weighted sum of drop chances)
+    - Item weights use formula: A% + B%/3 + C%/4
 
     Args:
         results: List of DropResult from search.
@@ -127,53 +128,70 @@ def format_multi_table_html(results: list, queries: list[str], max_results: int)
         HTML string containing the results table.
     """
     # Group results: (location, mission_type) -> item -> rotation -> chance
-    # defaultdict with lambda creates nested dicts automatically. Keep highest chance per rotation.
     by_location = defaultdict(lambda: defaultdict(dict))
     for result in results:
         key = (result.location, result.mission_type)
-        # Keep highest chance for each item/rotation combo
         if result.rotation not in by_location[key][result.item_name] or by_location[key][result.item_name][result.rotation] < result.chance:
             by_location[key][result.item_name][result.rotation] = result.chance
 
-    def location_score(entry):
-        """Score a location for sorting (more items + higher chance = better)."""
-        _, items_dict = entry
-        # Best chance across all items and rotations at this location
+    def item_weight(rotations: dict) -> float:
+        """Weighted drop chance for an item across all rotations.
+
+        Formula: A% + B%/3 + C%/4 — based on the 4-completion cycle where
+        A appears on completions 1-2, B on completion 3, and C on completion 4.
+        """
+        w = 0.0
+        if rotations.get("A"):
+            w += rotations["A"]
+        if rotations.get("B"):
+            w += rotations["B"] / 3
+        if rotations.get("C"):
+            w += rotations["C"] / 4
+        return w
+
+    def mission_weight(items_dict: dict) -> float:
+        """Sum of item weights for all queried items at this location."""
+        return sum(item_weight(items_dict[q]) for q in queries if q in items_dict)
+
+    # Sort locations by query weight desc, then more items first, then best chance
+    def sort_key(entry):
+        (location, mission_type), items_dict = entry
+        mw = mission_weight(items_dict)
+        num_items = len(items_dict)
         best_chance = max(c for v in items_dict.values() for c in v.values())
-        return len(items_dict), best_chance
+        return mw, num_items, best_chance
 
-    # Sort locations by score (more items, higher chance first)
-    sorted_locations = sorted(by_location.items(), key=location_score, reverse=True)
+    sorted_locations = sorted(by_location.items(), key=sort_key, reverse=True)
 
-    # Determine column order: for multi-query, use query order; otherwise alphabetical
-    if len(queries) > 1:
-        item_columns = []
-        for _, items_dict in by_location.items():
-            for col in items_dict:
-                if col not in item_columns:
-                    item_columns.append(col)
-    else:
-        # Single query: use alphabetical item names
-        item_columns = sorted(set(r.item_name for r in results))
+    # Determine column order: first-seen across locations preserves grouping
+    item_columns = []
+    seen = set()
+    for _, items_dict in by_location.items():
+        for col in items_dict:
+            if col not in seen:
+                item_columns.append(col)
+                seen.add(col)
 
     # Build header row with item names
     headers = "".join(f"<th>{item}</th>" for item in item_columns)
 
+    # Compute weights per location for data attributes
+    loc_weights = {loc: mission_weight(items_dict) for (loc, _), items_dict in by_location.items()}
+
     # Build data rows
     rows = []
-    # If max_results > 0, limit to that many rows; otherwise show all
     for idx, ((location, mission_type), items_dict) in enumerate(sorted_locations if max_results == 0 else sorted_locations[:max_results], 1):
-        # First cells: index, location, mission type
         row_cells = f"<td>{idx}</td><td>{location}</td><td>{mission_type}</td>"
+        mw = loc_weights[(location, mission_type)]
         for item in item_columns:
             if item in items_dict:
-                # Show all rotations and chances for this item
                 rotations = items_dict[item]
+                iw = item_weight(rotations)
                 rot_strs = [f"{rot}:{chance:.2f}%" for rot, chance in sorted(rotations.items())]
-                row_cells += f'<td class="chance">{" ".join(rot_strs)}</td>'
+                row_cells += f'<td class="chance" data-{item}="{iw:.4f}">{" ".join(rot_strs)}</td>'
             else:
                 row_cells += "<td>-</td>"
-        rows.append(f"<tr>{row_cells}</tr>")
+        rows.append(f'<tr data-weight="{mw:.4f}">{row_cells}</tr>')
 
     row_html = "".join(rows)
     unique_locations = len(sorted_locations)
@@ -189,9 +207,6 @@ def format_multi_table_html(results: list, queries: list[str], max_results: int)
         "<th>#</th><th>Location</th><th>Type</th>" + headers + "</tr></thead><tbody>" + row_html + "</tbody></table></div>"
     )
     return '<div class="table-wrapper">' + results_header + table_html
-
-
-
 
 
 # ============== Web Routes ==============
@@ -251,7 +266,7 @@ def index():
         query=query,
         results_html=results_html,
         max_results=num,
-        partial_checked=" checked" if partial else "",
+        partial_checked=partial_checked,
         mission_type=mission_types or "",
         refresh_qs=refresh_qs,
     )
