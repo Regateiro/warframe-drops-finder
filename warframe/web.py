@@ -134,26 +134,20 @@ def format_multi_table_html(results: list, queries: list[str], max_results: int)
         if result.rotation not in by_location[key][result.item_name] or by_location[key][result.item_name][result.rotation] < result.chance:
             by_location[key][result.item_name][result.rotation] = result.chance
 
-    def item_weight(rotations: dict) -> float:
-        """Weighted drop chance for an item across all rotations.
-
-        Formula: A% + B%/3 + C%/4 — based on the 4-completion cycle where
-        A appears on completions 1-2, B on completion 3, and C on completion 4.
-        """
-        w = 0.0
-        if rotations.get("A"):
-            w += rotations["A"]
-        if rotations.get("B"):
-            w += rotations["B"] / 3
-        if rotations.get("C"):
-            w += rotations["C"] / 4
-        return w
-
     def mission_weight(items_dict: dict) -> float:
-        """Sum of item weights for all queried items at this location."""
-        return sum(item_weight(items_dict[q]) for q in queries if q in items_dict)
+        """Mission weight based on max weighted average across rotations."""
+        a = sum(item.get("A", 0) for item in items_dict.values())
+        b = sum(item.get("B", 0) for item in items_dict.values())
+        c = sum(item.get("C", 0) for item in items_dict.values())
 
-    # Sort locations by query weight desc, then more items first, then best chance
+        weights = [a]
+        if b:
+            weights.append((2 * a + b) / 3)
+        if c:
+            weights.append((2 * a + b + c) / 4)
+        return max(weights)
+
+    # Sort locations by mission weight desc, then more items first, then best chance
     def sort_key(entry):
         (location, mission_type), items_dict = entry
         mw = mission_weight(items_dict)
@@ -183,7 +177,8 @@ def format_multi_table_html(results: list, queries: list[str], max_results: int)
         for item in item_columns:
             if item in items_dict:
                 rotations = items_dict[item]
-                iw = item_weight(rotations)
+                # Per-item weight: same formula, single item
+                iw = mission_weight({item: rotations})
                 rot_strs = [f"{rot}:{chance:.2f}%" for rot, chance in sorted(rotations.items())]
                 row_cells += f'<td class="chance" data-{item}="{iw:.4f}">{" ".join(rot_strs)}</td>'
             else:
