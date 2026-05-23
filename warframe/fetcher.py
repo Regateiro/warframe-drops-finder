@@ -33,7 +33,7 @@ CACHE_MAX_AGE = 86400
 FORCE_REFRESH_MIN_AGE = 300
 
 
-def fetch_drop_data(force_refresh: bool = False, force_load: bool = False) -> tuple[dict[str, Any], bool]:
+def fetch_drop_data(force_refresh: bool = False, force_load: bool = False) -> tuple[dict[str, Any], float | None, bool]:
     """Fetch drop data from cache or API.
 
     This is the main entry point for getting drop table data.
@@ -48,7 +48,7 @@ def fetch_drop_data(force_refresh: bool = False, force_load: bool = False) -> tu
         force_load: If True, forces loading data from disk.
 
     Returns:
-        A tuple of (drop data dictionary, boolean indicating if refreshed).
+        A tuple of (drop data dictionary, cache timestamp, boolean indicating if refreshed).
         The boolean is True if new data was fetched from the API, False if from cache.
 
     Raises:
@@ -56,8 +56,8 @@ def fetch_drop_data(force_refresh: bool = False, force_load: bool = False) -> tu
     """
     # No cache file at all -> fetch fresh data to populate initial cache
     if not os.path.exists(CACHE_FILE):
-        return refresh_drop_data(), True
-    
+        return refresh_drop_data()
+
     # Cache exists — check expiration before deciding whether to force-load or fetch fresh
     disk_cache_mtime = os.path.getmtime(CACHE_FILE)
     disk_cache_age = time.time() - disk_cache_mtime
@@ -65,7 +65,7 @@ def fetch_drop_data(force_refresh: bool = False, force_load: bool = False) -> tu
 
     # Expired cache always refreshes via API
     if disk_cache_expired:
-        return refresh_drop_data(), True
+        return refresh_drop_data()
 
     # Force load from disk if needed
     if force_load:
@@ -74,39 +74,34 @@ def fetch_drop_data(force_refresh: bool = False, force_load: bool = False) -> tu
     # Guard against force_refresh misuse: if cache is less than 5 minutes old,
     # always use it regardless of the force_refresh flag.
     if force_refresh and disk_cache_age > FORCE_REFRESH_MIN_AGE:
-        return refresh_drop_data(), True
-    
+        return refresh_drop_data()
+
     # No refresh needed, caller can load from internal cache
-    return None, False  
+    return None, disk_cache_mtime, False
 
 
-def load_drop_data() -> tuple[dict[str, Any], bool]:
+def load_drop_data() -> tuple[dict[str, Any], float | None, bool]:
     """Load drop data from cache, refreshing if corrupted.
 
     Returns:
-        A tuple of (drop data dictionary, boolean indicating if refreshed).
+        A tuple of (drop data dictionary, cache timestamp, boolean indicating if refreshed).
         The boolean is True if new data was fetched from the API due to cache issues, False if from cache.
     """
     with open(CACHE_FILE) as f:
         try:
-            return json.load(f), False
+            return json.load(f), os.path.getmtime(CACHE_FILE), False
         except (json.JSONDecodeError, IOError) as e:
             print(f"Cache error: {e}. Refreshing data.")
-            return refresh_drop_data(), True
+            return refresh_drop_data()
 
 
-def refresh_drop_data() -> dict[str, Any]:
+def refresh_drop_data() -> tuple[dict[str, Any] | None, float | None, bool]:
     """Fetch fresh data from the API and update cache.
 
     Makes an HTTP request to the WarframeStat.us API to get the latest
     drop table data. If the request fails, falls back to existing cache
-    if available. If both fail, exits with error.
-
-    Returns:
-        Dictionary containing all drop table data from the API.
-
-    Raises:
-        SystemExit(1): If API request fails and no cached data exists to fall back on.
+    if available. If both fail, returns `(None, True)` so callers can
+    handle gracefully instead of crashing.
     """
     try:
         # Create HTTP request with User-Agent header (some APIs require it)
@@ -119,14 +114,13 @@ def refresh_drop_data() -> dict[str, Any]:
         # API request failed -> try to use existing cache
         print(f"Failed to fetch data: {e}")
         if os.path.exists(CACHE_FILE):
-            print("Using cached data.")
             with open(CACHE_FILE) as f:
-                return json.load(f)
-        # No cache available -> fatal error
-        raise SystemExit(1)
+                return json.load(f), os.path.getmtime(CACHE_FILE), False
+        # No cache available to fall back on — caller should notify user
+        return None, None, False
 
     # Write fresh data to cache file for future use
     with open(CACHE_FILE, "w") as f:
         json.dump(data, f)
 
-    return data
+    return data, os.path.getmtime(CACHE_FILE), True

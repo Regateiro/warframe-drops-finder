@@ -28,10 +28,7 @@ from itertools import chain
 # Type hints for better IDE support and documentation
 from typing import Any, Callable
 
-# Local imports
-import os
-
-from .fetcher import CACHE_FILE, fetch_drop_data
+from .fetcher import fetch_drop_data
 from .models import DropResult
 
 # ============== Data Container ==============
@@ -92,6 +89,8 @@ class DropDataParser:
         self._cache: DropData | None = None
         # Raw data from API (used by iterators)
         self._data: dict[str, Any] | None = None
+        # Timestamp of last successful API fetch
+        self._cache_timestamp: float | None = None
         # Trigger initial data load
         self.refresh()
 
@@ -108,8 +107,14 @@ class DropDataParser:
                    5 minutes old. Expired cache auto-refreshes regardless.
                    If False, use cached data if available.
         """
-        # Fetch data if necessary (from cache or API, depending on force flag)
-        data, api_fetched = fetch_drop_data(force_refresh=force, force_load=self._data is None)
+        # Fetch data if necessary (from cache or API, depending on force flag).
+        # Returns (data dict | None, cache timestamp, boolean indicating fresh data was fetched).
+        data, self._cache_timestamp, api_fetched = fetch_drop_data(force_refresh=force, force_load=self._data is None)
+
+        # If data is None and we have no existing data, we can't proceed.
+        # This can happen if the API request fails and there's no cache to fall back on.
+        if data is None and self._data is None:
+            raise SystemExit(1, "No data available to load.")
 
         # Update data and cache mtime if data was loaded, regardless of source (API or cache)
         if data is not None:
@@ -141,6 +146,14 @@ class DropDataParser:
         """
         # Return cached data
         return self._cache
+
+    def get_cache_timestamp(self) -> float | None:
+        """Get the timestamp of the last successful API fetch.
+
+        Returns:
+            Timestamp (in seconds since epoch) of last API fetch, or None if never fetched.
+        """
+        return self._cache_timestamp
 
     # ============== Extraction Methods ==============
 

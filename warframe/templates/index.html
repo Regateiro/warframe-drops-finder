@@ -31,6 +31,9 @@
             </div>
         </div>
     </form>
+    {% if cache_warning %}
+    <div class="warning-banner">⚠️ {{ cache_warning }}</div>
+    {% endif %}
     {% if results_html %}
     {{ results_html|safe }}
     {% elif query %}

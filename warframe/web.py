@@ -16,6 +16,7 @@ The application:
 
 # Standard library imports
 import os
+import time
 
 # defaultdict creates nested dicts automatically for grouping results
 from collections import defaultdict
@@ -26,6 +27,7 @@ from dotenv import load_dotenv
 from flask import Flask, jsonify, render_template, request, send_from_directory
 
 # Local imports
+from warframe.fetcher import CACHE_MAX_AGE
 from warframe.parser import DropDataParser
 
 # Load environment variables from .env file in project root
@@ -247,6 +249,12 @@ def index():
     # Refresh data from API cache if the refresh flag is set.
     _parser.refresh(force=refresh)
 
+    # Check whether cached data is stale (> 24 h old) to warn about possible API outage.
+    ts = _parser.get_cache_timestamp()
+    cache_warning: str | None = None
+    if ts is not None and (time.time() - ts) > CACHE_MAX_AGE:
+        cache_warning = "Cache data may be stale — the WarframeStat.us API appears to be unavailable."
+
     # Parse comma-separated query terms, run search (exact or partial match),
     # then apply optional mission type filter and result limit.
     queries = parse_queries(query) if query else []
@@ -280,6 +288,7 @@ def index():
         partial_checked=partial_checked,
         mission_type=mission_types or "",
         refresh_qs=refresh_qs,
+        cache_warning=cache_warning,
     )
 
 

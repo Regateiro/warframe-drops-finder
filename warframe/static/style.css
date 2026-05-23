@@ -126,6 +126,13 @@ td.chance {
     color: #ff6b6b;
     margin-bottom: 1rem;
 }
+.warning-banner {
+    background: #3d2e00;
+    border-left: 4px solid #f5c518;
+    padding: 0.75rem 1rem;
+    margin-bottom: 1rem;
+    color: #f5c518;
+}
 .no-results {
     color: #888;
     font-style: italic;
