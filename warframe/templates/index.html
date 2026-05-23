@@ -4,33 +4,44 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Warframe Drop Locations</title>
-    <link rel="icon" type="image/png" href="{web_root}/static/favicon.png">
-    <link rel="stylesheet" href="{web_root}/static/style.css">
-    <script src="{web_root}/static/autocomplete.js"></script>
-    <script>var WEB_ROOT = "{web_root}";</script>
+    <link rel="icon" type="image/png" href="{{ web_root }}/static/favicon.png">
+    <link rel="stylesheet" href="{{ web_root }}/static/style.css">
+    <script src="{{ web_root }}/static/autocomplete.js"></script>
+    <script>var WEB_ROOT = "{{ web_root }}";</script>
 </head>
 <body>
     <div class="header">
         <h1>Warframe Drop Locations</h1>
-        <a class="btn" href="{web_root}/?refresh=1&q={query}">Refresh Data</a>
+        {% set qs = [] %}
+        {% if query %}{% set _ = qs.append('q=' + query) %}{% endif %}
+        {% if max_results and max_results != 0 %}{% set _ = qs.append('n=' + max_results|string) %}{% endif %}
+        {% if mission_type %}{% set _ = qs.append('mission_type=' + mission_type) %}{% endif %}
+        {% if 'partial' in partial_checked %}{% set _ = qs.append('partial') %}{% endif %}
+        <a class="btn" href="{{ web_root }}/?refresh=1{{ '&' + qs|join('&') if qs else '' }}">Refresh Data</a>
     </div>
-    <form method="get" action="{web_root}/">
-        <input type="text" name="q" placeholder="Search for an item..." value="{query}" autofocus>
-        <input type="number" name="n" value="{num}" min="0" placeholder="Max">
+    <form method="get" action="{{ web_root }}/">
+        <input type="text" name="q" placeholder="Search for an item..." value="{{ query }}" autofocus>
+        <input type="number" name="n" value="{{ max_results or '' }}" min="0" placeholder="Max">
         <button type="submit">Search</button>
         <button type="button" class="btn-drawer" onclick="toggleDrawer()">Advanced</button>
         <div class="drawer" id="drawer">
             <div class="drawer-content">
                 <label>
                     Mission Type Filter:
-                    <input type="text" name="mission_type" value="{mission_type}" placeholder="Mission type (e.g. Defense, Survival)">
+                    <input type="text" name="mission_type" value="{{ mission_type }}" placeholder="Mission type (e.g. Defense, Survival)">
                 </label>
                 <label>
-                    <input type="checkbox" name="partial" {partial_checked}> Partial match
+                    <input type="checkbox" name="partial" {{ partial_checked }}> Partial match
                 </label>
             </div>
         </div>
     </form>
-    {results}
+    {% if results %}
+    {{ results }}
+    {% else %}
+    {% if query %}
+    <p>No drops found for "{{ query }}".</p>
+    {% endif %}
+    {% endif %}
 </body>
 </html>

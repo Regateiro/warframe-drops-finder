@@ -22,7 +22,7 @@ from collections import defaultdict
 
 # Third-party imports from requirements
 from dotenv import load_dotenv
-from flask import Flask, jsonify, request, send_from_directory
+from flask import Flask, jsonify, render_template, request, send_from_directory
 
 # Local imports
 from warframe.parser import DropDataParser
@@ -190,36 +190,7 @@ def format_multi_table_html(results: list, queries: list[str], max_results: int)
     return '<div class="table-wrapper">' + results_header + table_html
 
 
-# ============== Template Caching ==============
 
-# Template caches - loaded once on first request
-# Storing in module globals avoids file I/O on every request
-INDEX_HTML = None
-MULTI_RESULT_TABLE = None
-NO_RESULTS = None
-
-
-@app.before_request
-def load_templates():
-    """Load HTML templates into memory on first request.
-
-    Flask hook that runs before each request.
-    On first request, reads template files from disk and caches them
-    in module globals. Subsequent requests use cached content.
-
-    This optimization avoids disk I/O on every HTTP request.
-    """
-    global INDEX_HTML, MULTI_RESULT_TABLE, NO_RESULTS
-    if INDEX_HTML is None:
-        # Read main page template (index.html)
-        with open(os.path.join(app.root_path, "templates", "index.html")) as f:
-            INDEX_HTML = f.read()
-        # Read multi-result table partial (for updates)
-        with open(os.path.join(app.root_path, "templates", "multi_result_table.html")) as f:
-            MULTI_RESULT_TABLE = f.read()
-        # Read "no results" message template
-        with open(os.path.join(app.root_path, "templates", "no_results.html")) as f:
-            NO_RESULTS = f.read()
 
 
 # ============== Web Routes ==============
@@ -250,38 +221,28 @@ def index():
     # Parse mission type filter (comma-separated)
     mission_types_filter = [mt.strip() for mt in mission_types.split(",") if mt.strip()]
 
-    results_html = ""
-    if query:
-        # Refresh data if requested (from cache or API)
-        _parser.refresh(force=refresh)
+    # Refresh data if requested (from cache or API)
+    _parser.refresh(force=refresh)
 
-        # Run search and get results
-        queries = parse_queries(query)
-        all_results = run_search(query, exact=not partial)
+    # Run search and get results
+    queries = parse_queries(query) if query else []
+    all_results = run_search(query, exact=not partial) if query else []
 
-        # Apply mission type filter if specified
-        if mission_types_filter:
-            # Case-insensitive matching
-            all_results = [r for r in all_results if r.mission_type.lower() in [mt.lower() for mt in mission_types_filter]]
+    # Apply mission type filter if specified
+    if mission_types_filter:
+        all_results = [r for r in all_results if r.mission_type.lower() in [mt.lower() for mt in mission_types_filter]]
 
-        # Limit results if num > 0
-        results = all_results[:num] if num > 0 else all_results
+    # Limit results if num > 0
+    results = all_results[:num] if num and num > 0 else all_results
 
-        # Format results as HTML table OR show "no results" message
-        if results:
-            results_html = format_multi_table_html(all_results, queries, num)
-        else:
-            # Template expects {query} placeholder
-            results_html = NO_RESULTS.format(query=query)
-
-    # Render main page template with all variables
-    html = INDEX_HTML.format(
+    return render_template(
+        "index.html",
         web_root=app.config["WEB_ROOT"],
         query=query,
-        num=num,
-        partial_checked=partial_checked,
-        mission_type=mission_types,
-        results=results_html,
+        results=results,
+        max_results=num,
+        partial_checked=" checked" if partial else "",
+        mission_type=mission_types or "",
     )
     return html
 
