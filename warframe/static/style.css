@@ -126,12 +126,19 @@ td.chance {
     color: #ff6b6b;
     margin-bottom: 1rem;
 }
-.warning-banner {
-    background: #3d2e00;
-    border-left: 4px solid #f5c518;
-    padding: 0.75rem 1rem;
-    margin-bottom: 1rem;
-    color: #f5c518;
+.cache-age {
+    font-size: 0.75rem;
+    color: #aaa;
+}
+.stale-icon {
+    display: inline-block;
+    margin-left: 0.35rem;
+    vertical-align: middle;
+    animation: pulse 2s ease-in-out infinite;
+}
+@keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
 }
 .no-results {
     color: #888;

@@ -12,7 +12,16 @@
 <body>
     <div class="header">
         <h1>Warframe Drop Locations</h1>
-        <a class="btn" href="{{ web_root }}/?refresh=1&{{ refresh_qs }}">Refresh Data</a>
+        <div style="display:flex;flex-direction:column;align-items:flex-end;gap:0.25rem;">
+            {% if cache_age != '--' %}
+            <span class="cache-age"{% if stale %} title="Cache is over 24 hours old — the WarframeStat.us API may be unavailable."{% endif %}>
+                Drop Data Age:
+                {% if stale %}<span class="stale-icon">⚠️</span>{% endif %}
+                {{ cache_age }}
+            </span>
+            {% endif %}
+            <a class="btn" href="{{ web_root }}/?refresh=1&{{ refresh_qs }}">Refresh Data</a>
+        </div>
     </div>
     <form method="get" action="{{ web_root }}/">
         <input type="text" name="q" placeholder="Search for an item..." value="{{ query }}" autofocus>
@@ -31,9 +40,6 @@
             </div>
         </div>
     </form>
-    {% if cache_warning %}
-    <div class="warning-banner">⚠️ {{ cache_warning }}</div>
-    {% endif %}
     {% if results_html %}
     {{ results_html|safe }}
     {% elif query %}
