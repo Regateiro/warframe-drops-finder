@@ -16,6 +16,7 @@ The application:
 
 # Standard library imports
 import os
+from urllib.parse import urlencode
 
 # defaultdict creates nested dicts automatically for grouping results
 from collections import defaultdict
@@ -235,6 +236,9 @@ def index():
     # Limit results if num > 0
     results = all_results[:num] if num and num > 0 else all_results
 
+    # Generate query string for refresh link, preserving current parameters
+    refresh_qs = urlencode(request.args.to_dict(), doseq=True)
+
     return render_template(
         "index.html",
         web_root=app.config["WEB_ROOT"],
@@ -243,8 +247,8 @@ def index():
         max_results=num,
         partial_checked=" checked" if partial else "",
         mission_type=mission_types or "",
+        refresh_qs=refresh_qs,
     )
-    return html
 
 
 @app.route("/api/drops")

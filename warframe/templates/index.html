@@ -12,12 +12,7 @@
 <body>
     <div class="header">
         <h1>Warframe Drop Locations</h1>
-        {% set qs = [] %}
-        {% if query %}{% set _ = qs.append('q=' + query) %}{% endif %}
-        {% if max_results and max_results != 0 %}{% set _ = qs.append('n=' + max_results|string) %}{% endif %}
-        {% if mission_type %}{% set _ = qs.append('mission_type=' + mission_type) %}{% endif %}
-        {% if 'partial' in partial_checked %}{% set _ = qs.append('partial') %}{% endif %}
-        <a class="btn" href="{{ web_root }}/?refresh=1{{ '&' + qs|join('&') if qs else '' }}">Refresh Data</a>
+        <a class="btn" href="{{ web_root }}/?refresh=1&{{ refresh_qs }}">Refresh Data</a>
     </div>
     <form method="get" action="{{ web_root }}/">
         <input type="text" name="q" placeholder="Search for an item..." value="{{ query }}" autofocus>
