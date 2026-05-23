@@ -74,7 +74,7 @@ def fetch_drop_data(force_refresh: bool = False, force_load: bool = False) -> tu
     # Guard against force_refresh misuse: if cache is less than 5 minutes old,
     # always use it regardless of the force_refresh flag.
     if force_refresh and disk_cache_age > FORCE_REFRESH_MIN_AGE:
-        return load_drop_data()
+        return refresh_drop_data(), True
     
     # No refresh needed, caller can load from internal cache
     return None, False  
