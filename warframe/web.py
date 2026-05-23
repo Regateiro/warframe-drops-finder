@@ -67,7 +67,7 @@ def parse_queries(query: str) -> list[str]:
         List of non-empty trimmed query strings.
     """
     # Split by comma, strip whitespace, filter empty strings (max 10 queries)
-    return [q.strip() for q in query.split(",")[:10] if (q := q.strip())]
+    return [q.strip() for q in query.split(",")[:10] if q.strip()]
 
 
 # ============== Parser Instance ==============
