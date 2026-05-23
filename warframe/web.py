@@ -193,7 +193,7 @@ def format_multi_table_html(results: list, queries: list[str], max_results: int)
                 # item's drops. This lets column headers sort by that item's relevance.
                 iw = mission_weight({item: rotations})
                 rot_strs = [f"{rot}:{chance:.2f}%" for rot, chance in sorted(rotations.items())]
-                row_cells += f'<td class="chance" data-{item}="{iw:.4f}">{" ".join(rot_strs)}</td>'
+                row_cells += f'<td class="chance" data-weight="{iw:.4f}">{" ".join(rot_strs)}</td>'
             else:
                 row_cells += "<td>-</td>"
         rows.append(f'<tr data-weight="{mw:.4f}">{row_cells}</tr>')

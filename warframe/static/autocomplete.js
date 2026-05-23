@@ -174,12 +174,6 @@ function sortTable(table, col) {
 
     // Check if this column uses the chance format
     const isChance = rows.length && rows[0].cells[col].classList.contains('chance');
-    // Get data attribute name for item columns (e.g. "data-Axi V14 Relic")
-    let cellDataAttr = null;
-    if (isChance) {
-        const thText = table.querySelectorAll('th')[col].textContent.trim();
-        if (thText !== '-') cellDataAttr = 'data-' + thText;
-    }
 
     // Sort rows: unsorted always falls back to col 0 text, chance columns use data attrs, default uses cell text
     rows.sort((a, b) => {
@@ -188,10 +182,11 @@ function sortTable(table, col) {
             const aNum = parseFloat(a.cells[0].textContent.trim()) || -Infinity;
             const bNum = parseFloat(b.cells[0].textContent.trim()) || -Infinity;
             return aNum - bNum;
-        } else if (isChance && cellDataAttr) {
-            const aVal = a.cells[col].getAttribute(cellDataAttr);
-            const bVal = b.cells[col].getAttribute(cellDataAttr);
-            // Rows without data go first in asc, last in desc
+        } else if (isChance) {
+            // Chance column: use data-weight from cells
+            const aVal = a.cells[col].getAttribute('data-weight');
+            const bVal = b.cells[col].getAttribute('data-weight');
+            // Rows without weight go first in asc, last in desc
             const missing = state === 'desc' ? Infinity : -Infinity;
             an = aVal !== null && aVal !== '' ? parseFloat(aVal) : missing;
             bn = bVal !== null && bVal !== '' ? parseFloat(bVal) : missing;
