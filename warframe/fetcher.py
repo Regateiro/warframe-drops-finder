@@ -11,7 +11,8 @@ The caching strategy:
 - On first run, fetch data from the API and save to cache file
 - On subsequent runs, load from cache
 - If cache is missing or corrupted, fetch fresh data from API
-- If force_refresh=True and cache is expired, fetch fresh data from API
+- Expired cache (> 24 hours old) auto-refreshes regardless of force_refresh
+- force_refresh=True forces a refresh after at least 5 minutes have passed
 """
 
 # Standard library imports for file I/O, networking, and time
@@ -28,9 +29,11 @@ API_URL = "https://drops.warframestat.us/data/all.json"
 CACHE_FILE = ".drop_cache.json"
 # Cache time-to-live in seconds (86400 = 24 hours)
 CACHE_MAX_AGE = 86400
+# Minimum age before force_refresh takes effect (300 = 5 minutes)
+FORCE_REFRESH_MIN_AGE = 300
 
 
-def fetch_drop_data(force_refresh: bool = False) -> tuple[dict[str, Any], bool]:
+def fetch_drop_data(force_refresh: bool = False, force_load: bool = False) -> tuple[dict[str, Any], bool]:
     """Fetch drop data from cache or API.
 
     This is the main entry point for getting drop table data.
@@ -38,33 +41,58 @@ def fetch_drop_data(force_refresh: bool = False) -> tuple[dict[str, Any], bool]:
     otherwise fetches fresh data from the API.
 
     Args:
-        force_refresh: If False (default), use cached data if available and not expired.
-            If True, fetch fresh data from the API even if cache is valid.
+        force_refresh: If False (default), use cached data if available.
+            Expired cache (> 24h) auto-refreshes regardless of this flag.
+            If True, forces a refresh only when the cache is at least
+            5 minutes old to prevent misuse.
+        force_load: If True, forces loading data from disk.
 
     Returns:
-        A tuple of (drop data dictionary, boolean indicating if data was refreshed).
+        A tuple of (drop data dictionary, boolean indicating if refreshed).
         The boolean is True if new data was fetched from the API, False if from cache.
 
     Raises:
-        SystemExit(1): If force_refresh=True and no cached data exists to fall back on
-            (cannot fetch from API in that case).
+        SystemExit(1): If no cached data exists and API request fails.
     """
-    # Check if cache file exists and whether we should use it
-    cache_exists = os.path.exists(CACHE_FILE)
-    cache_expired = cache_exists and (time.time() - os.path.getmtime(CACHE_FILE) > CACHE_MAX_AGE)
+    # No cache file at all -> fetch fresh data to populate initial cache
+    if not os.path.exists(CACHE_FILE):
+        return refresh_drop_data(), True
+    
+    # Cache exists — Force load from disk if requested
+    if force_load:
+        return load_drop_data()
 
-    # Missing cache, expired cache, or forced refresh -> fetch fresh data
-    if not cache_exists or (force_refresh and cache_expired):
+    # Check age and expiration status
+    disk_cache_mtime = os.path.getmtime(CACHE_FILE)
+    disk_cache_age = time.time() - disk_cache_mtime
+    disk_cache_expired = disk_cache_age > CACHE_MAX_AGE  # > 24 hours old
+
+    # Expired cache always refreshes via API
+    if disk_cache_expired:
         return refresh_drop_data(), True
 
-    # Cache exists and is valid -> try to load it
-    try:
-        with open(CACHE_FILE) as f:
+    # Guard against force_refresh misuse: if cache is less than 5 minutes old,
+    # always use it regardless of the force_refresh flag.
+    if force_refresh and disk_cache_age > FORCE_REFRESH_MIN_AGE:
+        return load_drop_data()
+    
+    # No refresh needed, caller can load from internal cache
+    return None, False  
+
+
+def load_drop_data() -> tuple[dict[str, Any], bool]:
+    """Load drop data from cache, refreshing if corrupted.
+
+    Returns:
+        A tuple of (drop data dictionary, boolean indicating if refreshed).
+        The boolean is True if new data was fetched from the API due to cache issues, False if from cache.
+    """
+    with open(CACHE_FILE) as f:
+        try:
             return json.load(f), False
-    except (json.JSONDecodeError, IOError) as e:
-        # Cache is corrupted -> refresh
-        print(f"Cache error: {e}. Refreshing data.")
-        return refresh_drop_data(), True
+        except (json.JSONDecodeError, IOError) as e:
+            print(f"Cache error: {e}. Refreshing data.")
+            return refresh_drop_data(), True
 
 
 def refresh_drop_data() -> dict[str, Any]:

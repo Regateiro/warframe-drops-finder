@@ -29,7 +29,9 @@ from itertools import chain
 from typing import Any, Callable
 
 # Local imports
-from .fetcher import fetch_drop_data
+import os
+
+from .fetcher import CACHE_FILE, fetch_drop_data
 from .models import DropResult
 
 # ============== Data Container ==============
@@ -76,8 +78,7 @@ class DropDataParser:
     Caching behavior:
         - Data is fetched on first refresh() call (or at init if using __init__ without override)
         - Parsed results are cached in _cache
-        - Cache is invalidated when fresh data is fetched
-        - Use refresh(force=True) to force re-fetch from API
+        - Use refresh(force=True) to force a refetch (requires cache to be ≥ 5 minutes old)
     """
 
     def __init__(self):
@@ -94,21 +95,27 @@ class DropDataParser:
         self.refresh()
 
     def refresh(self, force: bool = False) -> None:
-        """Refresh cached data from the API.
+        """Refresh cached data from the API or re-parse from local cache.
 
-        Fetches fresh data from the API (or loads from cache) and
-        re-parses if necessary.
+        Expired cache (> 24h old) auto-refreshes regardless of force flag.
+        When force=True and the cache is ≥ 5 minutes old, forces a refetch.
+        If the cache is less than 5 minutes old, it always uses cached data
+        to prevent misuse (rapid successive API calls).
 
         Args:
-            force: If True, force refresh from API even if cache is valid.
+            force: If True, force a refetch when the cache is at least
+                   5 minutes old. Expired cache auto-refreshes regardless.
                    If False, use cached data if available.
         """
-        # Fetch data (from cache or API, depending on force flag)
-        # Returns (data_dict, refetched_bool)
-        self._data, refetched = fetch_drop_data(force_refresh=force)
+        # Fetch data if necessary (from cache or API, depending on force flag)
+        data, api_fetched = fetch_drop_data(force_refresh=force, force_load=self._data is None)
 
-        # Re-cache if this is first load or if we got fresh data
-        if self._cache is None or refetched:
+        # Update data and cache mtime if data was loaded, regardless of source (API or cache)
+        if data is not None:
+            self._data = data
+
+        # Re-cache if this is first load or if we got fresh data from the API
+        if self._cache is None or api_fetched:
             self._recache()
 
     def _recache(self) -> None:

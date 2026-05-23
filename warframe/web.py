@@ -117,7 +117,7 @@ def format_multi_table_html(results: list, queries: list[str], max_results: int)
     - Results are grouped by (location, mission_type) tuple
     - Each item can have multiple rotations, keep highest chance
     - Locations sorted by query weight (weighted sum of drop chances)
-    - Item weights use formula: A% + B%/3 + C%/4
+    - Item weights use weighted average: max(a, (2a+b)/3 if B present, (2a+b+c)/4 if C present)
 
     Args:
         results: List of DropResult from search.
@@ -226,14 +226,14 @@ def index():
         n: Maximum results to show (0 = all)
         exact: If present, require exact item name match
         mission_type: Filter by mission type (comma-separated)
-        refresh: If present, force refresh from API
+        refresh: If present, request a cache refetch (only applied if the cache is ≥ 5 minutes old)
 
     Returns:
         HTML page with search form and optional results table.
     """
     # Parse and validate query parameters from URL.
     # Each parameter is sanitized: trimmed, bounded to prevent abuse/edge cases.
-    refresh = "refresh" in request.args  # Force API refresh
+    refresh = "refresh" in request.args  # Request cache refetch (guarded by 5-min minimum age)
     query = (request.args.get("q") or "").strip()[:500]  # Search query, max 500 chars
     n_raw = request.args.get("n")
     num = max(0, min(int(n_raw), 10_000)) if n_raw else 0  # Clamp to [0, 10000]
