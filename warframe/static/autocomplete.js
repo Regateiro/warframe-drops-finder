@@ -186,10 +186,9 @@ function sortTable(table, col) {
             // Chance column: use data-weight from cells
             const aVal = a.cells[col].getAttribute('data-weight');
             const bVal = b.cells[col].getAttribute('data-weight');
-            // Rows without weight go first in asc, last in desc
-            const missing = state === 'desc' ? Infinity : -Infinity;
-            an = aVal !== null && aVal !== '' ? parseFloat(aVal) : missing;
-            bn = bVal !== null && bVal !== '' ? parseFloat(bVal) : missing;
+            // Rows without weight always go last
+            an = (aVal !== null && aVal !== '') ? parseFloat(aVal) : Infinity;
+            bn = (bVal !== null && bVal !== '') ? parseFloat(bVal) : Infinity;
             return state === 'desc' ? bn - an : an - bn;
         } else {
             // Default sort by cell text (natural ordering via localeCompare)
