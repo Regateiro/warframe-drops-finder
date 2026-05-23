@@ -31,12 +31,10 @@
             </div>
         </div>
     </form>
-    {% if results %}
-    {{ results }}
-    {% else %}
-    {% if query %}
+    {% if results_html %}
+    {{ results_html|safe }}
+    {% elif query %}
     <p>No drops found for "{{ query }}".</p>
-    {% endif %}
     {% endif %}
 </body>
 </html>

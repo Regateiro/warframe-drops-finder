@@ -236,6 +236,12 @@ def index():
     # Limit results if num > 0
     results = all_results[:num] if num and num > 0 else all_results
 
+    # Format results as HTML table (or empty string for "no results")
+    if results:
+        results_html = format_multi_table_html(all_results, queries, num)
+    else:
+        results_html = ""
+
     # Generate query string for refresh link, preserving current parameters
     refresh_qs = urlencode(request.args.to_dict(), doseq=True)
 
@@ -243,7 +249,7 @@ def index():
         "index.html",
         web_root=app.config["WEB_ROOT"],
         query=query,
-        results=results,
+        results_html=results_html,
         max_results=num,
         partial_checked=" checked" if partial else "",
         mission_type=mission_types or "",
