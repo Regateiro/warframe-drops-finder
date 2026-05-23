@@ -78,7 +78,8 @@ class DropDataParser:
     Caching behavior:
         - Data is fetched on first refresh() call (or at init if using __init__ without override)
         - Parsed results are cached in _cache
-        - Use refresh(force=True) to force a refetch (requires cache to be ≥ 5 minutes old)
+        - Expired cache (> 24h) auto-refreshes regardless of force flag
+        - After initial load, refresh(force=False) uses in-memory data directly when cache is not expired
     """
 
     def __init__(self):
