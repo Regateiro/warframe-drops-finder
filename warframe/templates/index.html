@@ -15,7 +15,7 @@
         <div style="display:flex;flex-direction:column;align-items:flex-end;gap:0.25rem;">
             {% if cache_age != '--' %}
             <span class="cache-age"{% if stale %} title="Cache is over 24 hours old — the WarframeStat.us API may be unavailable."{% endif %}>
-                Drop Data Age:
+                Last Refresh:
                 {% if stale %}<span class="stale-icon">⚠️</span>{% endif %}
                 {{ cache_age }}
             </span>
