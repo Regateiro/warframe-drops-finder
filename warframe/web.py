@@ -66,8 +66,8 @@ def parse_queries(query: str) -> list[str]:
     Returns:
         List of non-empty trimmed query strings.
     """
-    # Split by comma, strip whitespace, filter empty strings
-    return [q.strip() for q in query.split(",") if q.strip()]
+    # Split by comma, strip whitespace, filter empty strings (max 10 queries)
+    return [q.strip() for q in query.split(",")[:10] if (q := q.strip())]
 
 
 # ============== Parser Instance ==============
@@ -225,14 +225,15 @@ def index():
     """
     # Parse query parameters from URL
     refresh = "refresh" in request.args  # Force API refresh
-    query = request.args.get("q", "")  # Search query
-    num = int(request.args.get("n", "0"))  # Max results (0 = all)
+    query = (request.args.get("q") or "").strip()[:500]  # Search query, max 500 chars
+    n_raw = request.args.get("n")
+    num = max(0, min(int(n_raw), 10_000)) if n_raw else 0  # Clamp to [0, 10000]
     partial = "partial" in request.args  # Partial match mode
     partial_checked = " checked" if partial else ""  # For checkbox HTML
-    mission_types = request.args.get("mission_type", "")  # Mission type filter
+    mission_types = (request.args.get("mission_type") or "").strip()[:256]  # Mission type filter, max 256 chars
 
-    # Parse mission type filter (comma-separated)
-    mission_types_filter = [mt.strip() for mt in mission_types.split(",") if mt.strip()]
+    # Parse mission type filter (comma-separated, max 20 types)
+    mission_types_filter = [mt.strip() for mt in mission_types.split(",")[:20] if mt.strip()]
 
     # Refresh data if requested (from cache or API)
     _parser.refresh(force=refresh)
@@ -255,7 +256,7 @@ def index():
         results_html = ""
 
     # Generate query string for refresh link, preserving current parameters
-    refresh_qs = urlencode(request.args.to_dict(), doseq=True)
+    refresh_qs = urlencode({k: v for k, v in request.args.items(multi=False) if v}, doseq=True)
 
     return render_template(
         "index.html",
