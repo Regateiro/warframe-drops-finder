@@ -193,8 +193,8 @@ function sortTable(table, col) {
             const bVal = b.cells[col].getAttribute(cellDataAttr);
             // Rows without data go first in asc, last in desc
             const missing = state === 'desc' ? Infinity : -Infinity;
-            an = (aVal === null || aVal === '') ? missing : parseFloat(aVal);
-            bn = (bVal === null || bVal === '') ? missing : parseFloat(bVal);
+            an = aVal !== null && aVal !== '' ? parseFloat(aVal) : missing;
+            bn = bVal !== null && bVal !== '' ? parseFloat(bVal) : missing;
             return state === 'desc' ? bn - an : an - bn;
         } else {
             // Default sort by cell text (natural ordering via localeCompare)
