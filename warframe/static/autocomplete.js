@@ -187,8 +187,10 @@ function sortTable(table, col) {
             const aVal = a.cells[col].getAttribute('data-weight');
             const bVal = b.cells[col].getAttribute('data-weight');
             // Rows without weight always go last
-            an = (aVal !== null && aVal !== '') ? parseFloat(aVal) : Infinity;
-            bn = (bVal !== null && bVal !== '') ? parseFloat(bVal) : Infinity;
+            if (aVal === null || aVal === '') return 1;
+            if (bVal === null || bVal === '') return -1;
+            an = parseFloat(aVal);
+            bn = parseFloat(bVal);
             return state === 'desc' ? bn - an : an - bn;
         } else {
             // Default sort by cell text (natural ordering via localeCompare)
