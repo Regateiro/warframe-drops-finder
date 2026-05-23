@@ -171,13 +171,14 @@ function sortTable(table, col) {
     // Clear existing sort classes
     table.querySelectorAll('th').forEach(h => h.classList.remove('asc', 'desc'));
     if (state !== 'unsorted') th.classList.add(state);
-    else { col = 0; }
 
     // Helper to extract percentage from "Rotation:X.XX%" format
     function extractChance(cell) {
         const m = cell.textContent.trim().match(/:(\d+\.?\d*)%/);
         return m ? parseFloat(m[1]) : NaN;
     }
+
+    if (state === 'unsorted') { col = 0; }
 
     // Check if this column uses the chance format
     const isChance = rows.length && rows[0].cells[col].classList.contains('chance');
@@ -188,24 +189,25 @@ function sortTable(table, col) {
         if (thText !== '-') cellDataAttr = 'data-' + thText;
     }
 
-    // Sort rows
+    // Sort rows by data-weight for default column, or item-specific weight for chance columns
     rows.sort((a, b) => {
         let an, bn;
         if (isChance && cellDataAttr) {
-            an = parseFloat(a.cells[col].getAttribute(cellDataAttr)) || 0;
-            bn = parseFloat(b.cells[col].getAttribute(cellDataAttr)) || 0;
-        } else if (col === 0) {
-            // Default sort uses data-weight for numeric comparison
-            an = parseFloat(a.getAttribute('data-weight')) || 0;
-            bn = parseFloat(b.getAttribute('data-weight')) || 0;
+            const aVal = a.cells[col].getAttribute(cellDataAttr);
+            const bVal = b.cells[col].getAttribute(cellDataAttr);
+            // Rows with data attr come first in desc, last in asc
+            if (aVal === null || aVal === '') an = -Infinity;
+            else an = parseFloat(aVal) || 0;
+            if (bVal === null || bVal === '') bn = -Infinity;
+            else bn = parseFloat(bVal) || 0;
         } else {
-            const av = a.cells[col].textContent.trim(), bv = b.cells[col].textContent.trim();
-            an = parseFloat(av), bn = parseFloat(bv);
-            if (isNaN(an) || isNaN(bn)) {
-                return state !== 'desc' ? av.localeCompare(bv) : bv.localeCompare(av);
-            }
+            // Default sort uses data-weight for numeric comparison
+            const aW = a.getAttribute('data-weight');
+            const bW = b.getAttribute('data-weight');
+            an = (aW !== null && aW !== '') ? parseFloat(aW) || 0 : -Infinity;
+            bn = (bW !== null && bW !== '') ? parseFloat(bW) || 0 : -Infinity;
         }
-        return state !== 'desc' ? an - bn : bn - an;
+        return state === 'desc' ? bn - an : an - bn;
     });
 
     // Append sorted rows

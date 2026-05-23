@@ -135,7 +135,18 @@ def format_multi_table_html(results: list, queries: list[str], max_results: int)
             by_location[key][result.item_name][result.rotation] = result.chance
 
     def mission_weight(items_dict: dict) -> float:
-        """Mission weight based on max weighted average across rotations."""
+        """Compute a relevance score for a set of items at one location.
+
+        Warframe relic missions follow a 4-completion cycle: A drops on completions
+        1-2, B on completion 3, C on completion 4. Each item's drop chance is
+        weighted by how often it appears in the cycle (A gets double weight since
+        it appears twice). The function sums all queried items' chances per rotation,
+        then returns the maximum of available weighted averages:
+          - A only:             a_total           (= A%)
+          - A + B present:      (2*a + b) / 3    (= avg across 3 possible drops)
+          - All three present:  (2*a + b + c) / 4 (= avg across all completions)
+        Taking the max captures the scenario where the item is most likely to drop.
+        """
         a = sum(item.get("A", 0) for item in items_dict.values())
         b = sum(item.get("B", 0) for item in items_dict.values())
         c = sum(item.get("C", 0) for item in items_dict.values())
@@ -169,7 +180,8 @@ def format_multi_table_html(results: list, queries: list[str], max_results: int)
     # Build header row with item names
     headers = "".join(f"<th>{item}</th>" for item in item_columns)
 
-    # Build data rows
+    # Build table rows in sorted order (most relevant missions first).
+    # Each row gets a `data-weight` attribute with the mission weight for client-side sorting.
     rows = []
     for idx, ((location, mission_type), items_dict) in enumerate(sorted_locations if max_results == 0 else sorted_locations[:max_results], 1):
         row_cells = f"<td>{idx}</td><td>{location}</td><td>{mission_type}</td>"
@@ -177,7 +189,8 @@ def format_multi_table_html(results: list, queries: list[str], max_results: int)
         for item in item_columns:
             if item in items_dict:
                 rotations = items_dict[item]
-                # Per-item weight: same formula, single item
+                # Per-item weight: apply the same weighted-average formula to just this
+                # item's drops. This lets column headers sort by that item's relevance.
                 iw = mission_weight({item: rotations})
                 rot_strs = [f"{rot}:{chance:.2f}%" for rot, chance in sorted(rotations.items())]
                 row_cells += f'<td class="chance" data-{item}="{iw:.4f}">{" ".join(rot_strs)}</td>'
@@ -218,7 +231,8 @@ def index():
     Returns:
         HTML page with search form and optional results table.
     """
-    # Parse query parameters from URL
+    # Parse and validate query parameters from URL.
+    # Each parameter is sanitized: trimmed, bounded to prevent abuse/edge cases.
     refresh = "refresh" in request.args  # Force API refresh
     query = (request.args.get("q") or "").strip()[:500]  # Search query, max 500 chars
     n_raw = request.args.get("n")
@@ -230,10 +244,11 @@ def index():
     # Parse mission type filter (comma-separated, max 20 types)
     mission_types_filter = [mt.strip() for mt in mission_types.split(",")[:20] if mt.strip()]
 
-    # Refresh data if requested (from cache or API)
+    # Refresh data from API cache if the refresh flag is set.
     _parser.refresh(force=refresh)
 
-    # Run search and get results
+    # Parse comma-separated query terms, run search (exact or partial match),
+    # then apply optional mission type filter and result limit.
     queries = parse_queries(query) if query else []
     all_results = run_search(query, exact=not partial) if query else []
 
@@ -244,13 +259,16 @@ def index():
     # Limit results if num > 0
     results = all_results[:num] if num and num > 0 else all_results
 
-    # Format results as HTML table (or empty string for "no results")
+    # Format search results into an HTML table with weighted sorting.
+    # Passes all_results (unlimited) to the formatter so it can compute weights
+    # from the full dataset before applying the row limit.
     if results:
         results_html = format_multi_table_html(all_results, queries, num)
     else:
         results_html = ""
 
-    # Generate query string for refresh link, preserving current parameters
+    # Build refresh URL query string: clone all current params (excluding empty values)
+    # so clicking Refresh preserves filters while adding the refresh flag.
     refresh_qs = urlencode({k: v for k, v in request.args.items(multi=False) if v}, doseq=True)
 
     return render_template(
