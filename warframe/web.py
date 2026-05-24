@@ -28,6 +28,7 @@ from flask import Flask, jsonify, render_template, request, send_from_directory
 
 # Local imports
 from warframe.fetcher import CACHE_MAX_AGE
+from warframe.models import Mission
 from warframe.parser import DropDataParser
 
 # Load environment variables from .env file in project root
@@ -129,14 +130,14 @@ def format_multi_table_html(results: list, queries: list[str], max_results: int)
     Returns:
         HTML string containing the results table.
     """
-    # Group results: (location, mission_type) -> item -> {rotation: chance}
+    # Group results: (location, Mission) -> item -> {rotation: chance}
     by_location = defaultdict(lambda: defaultdict(dict))
     for result in results:
         key = (result.location, result.mission_type)
         if result.rotation not in by_location[key][result.item_name] or by_location[key][result.item_name][result.rotation] < result.chance:
             by_location[key][result.item_name][result.rotation] = result.chance
 
-    def mission_weight(items_dict: dict, mission_type: str) -> float:
+    def mission_weight(items_dict: dict, mission: Mission) -> float:
         """Compute a relevance score for a set of items at one location.
 
         Warframe relic missions follow a 4-completion cycle: A drops on completions
@@ -165,7 +166,8 @@ def format_multi_table_html(results: list, queries: list[str], max_results: int)
 
         if not has_rotations:
             # Single reward table: total drop chance across all items
-            return sum(c for v in items_dict.values() for c in v.values())
+            raw_weight = sum(c for v in items_dict.values() for c in v.values())
+            return raw_weight / mission.get_average_time_per_cycle()
 
         a = sum(v.get("A", 0) for v in items_dict.values())
         b = sum(v.get("B", 0) for v in items_dict.values())
@@ -174,7 +176,7 @@ def format_multi_table_html(results: list, queries: list[str], max_results: int)
 
         # Special case: Disruption — C only available after 2 prior completions,
         # A and B always available (A by restarting). Assumes ~10 round run with C on 8 rounds.
-        if mission_type == "Disruption":
+        if mission.get_name() == "Disruption":
             # Assume running for the A reward table exclusively, since it is available on the first three completions and can be restarted.
             weights.append(a)
             # Assume running for the B reward table exclusively, since it is always available
@@ -190,13 +192,14 @@ def format_multi_table_html(results: list, queries: list[str], max_results: int)
             # Assume running up to the fourth completion cycle for the C reward table
             weights.append((2 * a + b + c) / 4)
 
-        # Return the weight of the optimal completion strategy for this item at this location (the max of the available weighted averages).
-        return max(weights)
+        # Normalize by average time per cycle so longer missions don't
+        # get an unfair advantage.
+        return max(weights) / mission.get_average_time_per_cycle()
 
     # Sort locations by mission weight desc, then more items first, then best chance
     def sort_key(entry):
-        (location, mission_type), items_dict = entry
-        mw = mission_weight(items_dict, mission_type)
+        (location, mission), items_dict = entry
+        mw = mission_weight(items_dict, mission)
         num_items = len(items_dict)
         best_chance = max(c for v in items_dict.values() for c in v.values())
         return mw, num_items, best_chance
@@ -218,19 +221,19 @@ def format_multi_table_html(results: list, queries: list[str], max_results: int)
     # Build table rows in sorted order (most relevant missions first).
     # Each row gets a `data-weight` attribute with the mission weight for client-side sorting.
     rows = []
-    for idx, ((location, mission_type), items_dict) in enumerate(sorted_locations if max_results == 0 else sorted_locations[:max_results], 1):
-        row_cells = f"<td>{idx}</td><td>{location}</td><td>{mission_type}</td>"
-        mw = mission_weight(items_dict, mission_type)
+    for idx, ((location, mission), items_dict) in enumerate(sorted_locations if max_results == 0 else sorted_locations[:max_results], 1):
+        row_cells = f"<td>{idx}</td><td>{location}</td><td>{mission.get_name()}</td>"
+        mw = mission_weight(items_dict, mission)
         for item in item_columns:
             if item in items_dict:
                 rotations = items_dict[item]
                 # Per-item weight: apply the same weighted-average formula to just this
                 # item's drops. This lets column headers sort by that item's relevance.
-                iw = mission_weight({item: dict(rotations)}, mission_type)
+                iw = mission_weight({item: dict(rotations)}, mission)
                 rot_strs = [f"{rot}:{chance:.2f}%" for rot, chance in sorted(rotations.items())]
                 row_cells += f'<td class="chance" data-weight="{iw:.4f}">{" ".join(rot_strs)}</td>'
             else:
-                row_cells += "<td>-</td>"
+                row_cells += '<td class="chance" data-weight="0">-</td>'
         rows.append(f'<tr data-weight="{mw:.4f}">{row_cells}</tr>')
 
     row_html = "".join(rows)
@@ -300,7 +303,7 @@ def index():
 
     # Apply mission type filter if specified
     if mission_types_filter:
-        all_results = [r for r in all_results if r.mission_type.lower() in [mt.lower() for mt in mission_types_filter]]
+        all_results = [r for r in all_results if r.mission_type.get_name().lower() in [mt.lower() for mt in mission_types_filter]]
 
     # Limit results if num > 0
     results = all_results[:num] if num and num > 0 else all_results
@@ -356,7 +359,7 @@ def api_drops():
 
     # Apply mission type filter if specified
     if mission_types:
-        results = [r for r in results if r.mission_type.lower() in [mt.lower() for mt in mission_types]]
+        results = [r for r in results if r.mission_type.get_name().lower() in [mt.lower() for mt in mission_types]]
 
     # Limit results if requested
     results = results[:max_results] if max_results > 0 else results
@@ -367,7 +370,7 @@ def api_drops():
             "item_name": r.item_name,
             "chance": r.chance,
             "location": r.location,
-            "mission_type": r.mission_type,
+            "mission_type": r.mission_type.get_name(),
             "rotation": r.rotation,
         }
         for r in results

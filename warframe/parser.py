@@ -19,7 +19,7 @@ Public API (methods intended for external use):
 All other methods are internal (prefixed with underscore).
 """
 
-# dataclass creates the DropData container with minimal boilerplate
+# Dataclass decorator for creating immutable data containers
 from dataclasses import dataclass
 
 # chain.from_iterable flattens results from multiple iterators into one list
@@ -29,7 +29,7 @@ from itertools import chain
 from typing import Any, Callable
 
 from .fetcher import fetch_drop_data
-from .models import DropResult
+from .models import DropResult, Mission
 
 # ============== Data Container ==============
 
@@ -127,8 +127,8 @@ class DropDataParser:
     def _recache(self) -> None:
         """Parse raw API data into structured DropData and cache it.
 
-        Extracts unique items and mission types from the raw dictionary
-        and stores in _cache for fast access.
+        Extracts unique items and mission types from the raw dictionary,
+        along with their average time per cycle, and stores in _cache for fast access.
         """
         self._cache = DropData(
             items=self._extract_items(),
@@ -262,7 +262,7 @@ class DropDataParser:
         """
         # Exact: require full match; Substring: check containment
         # Both compare lowercase for case-insensitivity
-        return lambda name: query.lower() == name.lower() if exact else query.lower() in name.lower()
+        return lambda name: (query.lower() == name.lower() if exact else query.lower() in name.lower())
 
     def search_items(self, query: str, exact: bool = False) -> list[DropResult]:
         """Search for items matching the query across all drop sources.
@@ -317,17 +317,26 @@ class DropDataParser:
                 rewards = details.get("rewards", {})
                 location = f"{planet} - {mission}"
 
+                mission = Mission(game_mode)
                 if isinstance(rewards, dict):
                     for tier, items in rewards.items():
                         for item in items:
                             item_name = item.get("itemName", "")
                             if match_fn(item_name):
-                                results.append(DropResult(item_name, item["chance"], location, game_mode, tier))
+                                results.append(
+                                    DropResult(
+                                        item_name,
+                                        item["chance"],
+                                        location,
+                                        mission,
+                                        tier,
+                                    )
+                                )
                 elif isinstance(rewards, list):
                     for item in rewards:
                         item_name = item.get("itemName", "")
                         if match_fn(item_name):
-                            results.append(DropResult(item_name, item["chance"], location, game_mode, "-"))
+                            results.append(DropResult(item_name, item["chance"], location, mission, "-"))
 
         return results
 
@@ -354,7 +363,15 @@ class DropDataParser:
             for reward in relic.get("rewards", []):
                 item_name = reward.get("itemName", "")
                 if match_fn(item_name):
-                    results.append(DropResult(item_name, reward["chance"], f"Relic: {tier} {relic_name}", "", state))
+                    results.append(
+                        DropResult(
+                            item_name,
+                            reward["chance"],
+                            f"Relic: {tier} {relic_name}",
+                            Mission(""),
+                            state,
+                        )
+                    )
 
         return results
 
@@ -379,7 +396,15 @@ class DropDataParser:
             for enemy in mod_loc.get("enemies", []):
                 enemy_name = enemy.get("enemyName", "")
                 if match_fn(mod_name):
-                    results.append(DropResult(mod_name, enemy["chance"], f"Mod drop: {enemy_name}", "", "-"))
+                    results.append(
+                        DropResult(
+                            mod_name,
+                            enemy["chance"],
+                            f"Mod drop: {enemy_name}",
+                            Mission(""),
+                            "-",
+                        )
+                    )
 
         return results
 
@@ -404,7 +429,15 @@ class DropDataParser:
             for enemy in bp_loc.get("enemies", []):
                 item_name = bp_name
                 if match_fn(item_name):
-                    results.append(DropResult(item_name, enemy["chance"], f"Blueprint: {enemy['enemyName']}", "", "-"))
+                    results.append(
+                        DropResult(
+                            item_name,
+                            enemy["chance"],
+                            f"Blueprint: {enemy['enemyName']}",
+                            Mission(""),
+                            "-",
+                        )
+                    )
 
         return results
 
@@ -432,7 +465,15 @@ class DropDataParser:
                     for item in items:
                         item_name = item.get("itemName", "")
                         if match_fn(item_name):
-                            results.append(DropResult(item_name, item["chance"], f"Key: {key_name}", "", tier))
+                            results.append(
+                                DropResult(
+                                    item_name,
+                                    item["chance"],
+                                    f"Key: {key_name}",
+                                    Mission(""),
+                                    tier,
+                                )
+                            )
 
         return results
 
@@ -458,7 +499,15 @@ class DropDataParser:
                 item_name = reward.get("itemName", "")
                 rotation = reward.get("rotation", "")
                 if match_fn(item_name):
-                    results.append(DropResult(item_name, reward["chance"], f"Transient: {place}", "", rotation or "-"))
+                    results.append(
+                        DropResult(
+                            item_name,
+                            reward["chance"],
+                            f"Transient: {place}",
+                            Mission(""),
+                            rotation or "-",
+                        )
+                    )
 
         return results
 
@@ -481,7 +530,7 @@ class DropDataParser:
         for reward in data.get("sortieRewards", []):
             item_name = reward.get("itemName", "")
             if match_fn(item_name):
-                results.append(DropResult(item_name, reward["chance"], "Sortie", "", "-"))
+                results.append(DropResult(item_name, reward["chance"], "Sortie", Mission(""), "-"))
 
         return results
 
@@ -509,6 +558,14 @@ class DropDataParser:
                     for item in items:
                         item_name = item.get("itemName", "")
                         if match_fn(item_name):
-                            results.append(DropResult(item_name, item["chance"], f"Cetus: {place}", "", tier))
+                            results.append(
+                                DropResult(
+                                    item_name,
+                                    item["chance"],
+                                    f"Cetus: {place}",
+                                    Mission(""),
+                                    tier,
+                                )
+                            )
 
         return results

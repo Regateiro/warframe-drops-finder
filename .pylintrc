@@ -1,0 +1,6 @@
+[TYPECHECK]
+# Tell pylint to recognize dataclass-generated __init__ signatures
+extension-pkg-allow-list=dataclasses
+
+[MESSAGES CONTROL]
+disable=E1121

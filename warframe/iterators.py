@@ -35,7 +35,7 @@ def make_match_fn(query: str, exact: bool) -> Callable[[str], bool]:
     """
     # Case-insensitive: compare lowercase versions of query and item name
     # Exact: require full string match; Substring: check if query is contained
-    return lambda name: query.lower() == name.lower() if exact else query.lower() in name.lower()
+    return lambda name: (query.lower() == name.lower() if exact else query.lower() in name.lower())
 
 
 # ============== Mission Drop Tables ==============
@@ -137,7 +137,15 @@ def iter_relic_drops(data: dict[str, Any], query: str, exact: bool = False) -> l
             if match_fn(item_name):
                 # Location format: "Relic: TIER NAME" (e.g., "Relic: Lith A1")
                 # Rotation field stores the relic state
-                results.append(DropResult(item_name, reward["chance"], f"Relic: {tier} {relic_name}", "", state))
+                results.append(
+                    DropResult(
+                        item_name,
+                        reward["chance"],
+                        f"Relic: {tier} {relic_name}",
+                        "",
+                        state,
+                    )
+                )
 
     return results
 
@@ -219,7 +227,15 @@ def iter_blueprint_drops(data: dict[str, Any], query: str, exact: bool = False) 
             item_name = bp_name
             if match_fn(item_name):
                 # Location format: "Blueprint: Enemy Name"
-                results.append(DropResult(item_name, enemy["chance"], f"Blueprint: {enemy['enemyName']}", "", "-"))
+                results.append(
+                    DropResult(
+                        item_name,
+                        enemy["chance"],
+                        f"Blueprint: {enemy['enemyName']}",
+                        "",
+                        "-",
+                    )
+                )
 
     return results
 
@@ -304,7 +320,15 @@ def iter_transient_drops(data: dict[str, Any], query: str, exact: bool = False) 
             if match_fn(item_name):
                 # Location format: "Transient: Mission Name"
                 # Use "-" as placeholder if no rotation specified
-                results.append(DropResult(item_name, reward["chance"], f"Transient: {place}", "", rotation or "-"))
+                results.append(
+                    DropResult(
+                        item_name,
+                        reward["chance"],
+                        f"Transient: {place}",
+                        "",
+                        rotation or "-",
+                    )
+                )
 
     return results
 

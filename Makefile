@@ -1,7 +1,7 @@
 .PHONY: serve deploy lint test
 
 lint:
-	@echo "\nRunning code quality checks..."
+	@echo "Running code quality checks..."
 	@poetry run black -l 150 ./warframe/*.py
 	@poetry run flake8 --max-line-length 150 ./warframe/*.py
 	@poetry run isort --profile black ./warframe/*.py

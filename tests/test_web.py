@@ -1,6 +1,6 @@
 import pytest
 
-from warframe.models import DropResult
+from warframe.models import DropResult, Mission
 from warframe.parser import DropDataParser
 from warframe.web import format_multi_table_html, parse_queries
 
@@ -348,52 +348,75 @@ class TestMissionWeight:
     def test_single_table_returns_sum_of_chances(self):
         """Single-table missions (rotation='-') should use total drop chance as weight."""
         results = [
-            DropResult("Item1", 5.0, "Earth - TestMission", "Capture", "-"),
+            DropResult("Item1", 5.0, "Earth - TestMission", Mission("Capture"), "-")
         ]
         html = format_multi_table_html(results, ["Item1"], 0)
         import re
+
         match = re.search(r'<tr data-weight="([\d.]+)"', html)
         assert match is not None
         weight = float(match.group(1))
-        assert abs(weight - 5.0) < 0.001, f"Expected ~5.0 for single-table, got {weight}"
+        # Capture ATPC = 80 → 5 / 80 = 0.0625
+        assert (
+            abs(weight - 0.0625) < 0.001
+        ), f"Expected ~0.0625 for single-table, got {weight}"
 
     def test_single_table_multi_items(self):
         """Single-table missions with multiple items should sum all chances."""
         results = [
-            DropResult("ItemA", 10.0, "Earth - TestMission", "Capture", "-"),
-            DropResult("ItemB", 5.0, "Earth - TestMission", "Capture", "-"),
+            DropResult(
+                "ItemA", 10.0, "Earth - TestMission", Mission("Capture"), "-"
+            ),
+            DropResult(
+                "ItemB", 5.0, "Earth - TestMission", Mission("Capture"), "-"
+            ),
         ]
         html = format_multi_table_html(results, ["ItemA", "ItemB"], 0)
         import re
+
         match = re.search(r'<tr data-weight="([\d.]+)"', html)
         assert match is not None
         weight = float(match.group(1))
-        # Should be sum of all chances: 10 + 5 = 15
-        assert abs(weight - 15.0) < 0.001, f"Expected ~15.0 for single-table multi-item, got {weight}"
+        # Capture ATPC = 80 → (10 + 5) / 80 = 0.1875
+        assert (
+            abs(weight - (10 + 5) / 80) < 0.001
+        ), f"Expected ~{15/80:.4f} for single-table multi-item, got {weight}"
 
     def test_multi_table_returns_max_strategy(self):
         """Multi-table missions return max across A-only and weighted-average strategies."""
         results = [
-            DropResult("Item", 20.0, "Mercury - TestMission", "Survival", "A"),
-            DropResult("Item", 15.0, "Mercury - TestMission", "Survival", "B"),
+            DropResult(
+                "Item", 20.0, "Mercury - TestMission", Mission("Survival"), "A"
+            ),
+            DropResult(
+                "Item", 15.0, "Mercury - TestMission", Mission("Survival"), "B"
+            ),
         ]
         html = format_multi_table_html(results, ["Item"], 0)
         import re
+
         match = re.search(r'<tr data-weight="([\d.]+)"', html)
         assert match is not None
         weight = float(match.group(1))
-        # max(a=20, (2*20+15)/3≈18.33, ...) = 20.0
-        assert abs(weight - 20.0) < 0.001, f"Expected ~20.0 for multi-table, got {weight}"
+        # max(a=20, (2*20+15)/3≈18.33, ...) = 20 / Survival ATPC(240)
+        assert (
+            abs(weight - 20.0 / 240) < 0.001
+        ), f"Expected ~{20/240:.6f} for multi-table, got {weight}"
 
     def test_multi_table_b_only(self):
         """When only B is available, weighted avg should be used (better than A-only)."""
         results = [
-            DropResult("Item", 5.0, "Mercury - TestMission", "Survival", "B"),
+            DropResult(
+                "Item", 5.0, "Mercury - TestMission", Mission("Survival"), "B"
+            )
         ]
         html = format_multi_table_html(results, ["Item"], 0)
         import re
+
         match = re.search(r'<tr data-weight="([\d.]+)"', html)
         assert match is not None
         weight = float(match.group(1))
-        # max(a=0, (2*0+5)/3≈1.67, ...) = 1.67
-        assert abs(weight - 5.0 / 3) < 0.001, f"Expected ~{5.0/3:.4f} for B-only multi-table, got {weight}"
+        # max(a=0, (2*0+5)/3≈1.67, ...) = (5/3) / Survival ATPC(240)
+        assert (
+            abs(weight - (5.0 / 3) / 240) < 0.001
+        ), f"Expected ~{(5.0/3)/240:.6f} for B-only multi-table, got {weight}"
