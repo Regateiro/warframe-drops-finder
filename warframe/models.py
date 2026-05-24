@@ -54,6 +54,11 @@ class Mission:
         # Return the average time per cycle for this mission type, or 120 seconds as a default
         return Mission.MISSION_ATPC.get(self.name, 120)
 
+    @staticmethod
+    def get_average_restart_time() -> int:
+        """Return the average restart time in seconds."""
+        return 20
+
 
 @dataclass(frozen=True)
 class DropResult:

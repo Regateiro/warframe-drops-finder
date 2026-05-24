@@ -398,10 +398,10 @@ class TestMissionWeight:
         match = re.search(r'<tr data-weight="([\d.]+)"', html)
         assert match is not None
         weight = float(match.group(1))
-        # max(a=20, (2*20+15)/3≈18.33, ...) = 20 / Survival ATPC(240)
+        # max(a/(matpc+mart), ...) = max(20/260, (40+15)/760) ≈ 0.0769
         assert (
-            abs(weight - 20.0 / 240) < 0.001
-        ), f"Expected ~{20/240:.6f} for multi-table, got {weight}"
+            abs(weight - 20.0 / 260) < 0.001
+        ), f"Expected ~{20/260:.6f} for multi-table, got {weight}"
 
     def test_multi_table_b_only(self):
         """When only B is available, weighted avg should be used (better than A-only)."""
@@ -416,7 +416,7 @@ class TestMissionWeight:
         match = re.search(r'<tr data-weight="([\d.]+)"', html)
         assert match is not None
         weight = float(match.group(1))
-        # max(a=0, (2*0+5)/3≈1.67, ...) = (5/3) / Survival ATPC(240)
+        # max(a=0, (2*0+5)/(3*matpc+mart)) = 5/(720+20) ≈ 0.00676
         assert (
-            abs(weight - (5.0 / 3) / 240) < 0.001
-        ), f"Expected ~{(5.0/3)/240:.6f} for B-only multi-table, got {weight}"
+            abs(weight - 5.0 / 740) < 0.001
+        ), f"Expected ~{5/740:.6f} for B-only multi-table, got {weight}"

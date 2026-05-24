@@ -172,29 +172,31 @@ def format_multi_table_html(results: list, queries: list[str], max_results: int)
         a = sum(v.get("A", 0) for v in items_dict.values())
         b = sum(v.get("B", 0) for v in items_dict.values())
         c = sum(v.get("C", 0) for v in items_dict.values())
+        matpc = mission.get_average_time_per_cycle()
+        mart = Mission.get_average_restart_time()
         weights = []
 
         # Special case: Disruption — C only available after 2 prior completions,
         # A and B always available (A by restarting). Assumes ~10 round run with C on 8 rounds.
         if mission.get_name() == "Disruption":
             # Assume running for the A reward table exclusively, since it is available on the first three completions and can be restarted.
-            weights.append(a)
-            # Assume running for the B reward table exclusively, since it is always available
-            weights.append(b)
+            weights.append((3 * a) / (3 * matpc + mart))
+            # Assume running for the B reward table exclusively for 10 rounds, since it is always available.
+            weights.append((10 * b) / (10 * matpc + mart))
             # Assume running for the C reward table past the second completion
             # This captures the scenario where the item is most likely to drop from the C reward table.
-            weights.append((max(a, b) * 2 + c * 8) / 10)
+            weights.append((max(a, b) * 2 + c * 8) / (10 * matpc + mart))
         else:
             # Assume running only the first two completion cycles for the A reward table
-            weights.append(a)
+            weights.append(a / (matpc + mart))
             # Assume running only up to the third completion cycle for the B reward table
-            weights.append((2 * a + b) / 3)
+            weights.append((2 * a + b) / (3 * matpc + mart))
             # Assume running up to the fourth completion cycle for the C reward table
-            weights.append((2 * a + b + c) / 4)
+            weights.append((2 * a + b + c) / (4 * matpc + mart))
 
         # Normalize by average time per cycle so longer missions don't
         # get an unfair advantage.
-        return max(weights) / mission.get_average_time_per_cycle()
+        return max(weights)
 
     # Sort locations by mission weight desc, then more items first, then best chance
     def sort_key(entry):
