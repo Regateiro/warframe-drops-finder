@@ -149,6 +149,9 @@ def format_multi_table_html(results: list, queries: list[str], max_results: int)
           - All three present:  (2*a + b + c) / 4 (= avg across all completions)
         Taking the max captures the scenario where the item is most likely to drop.
 
+        For missions with a single reward table (no A/B/C rotations), the total drop
+        chance is used directly since there is no cycle weighting needed.
+
         For Disruption missions, the rotation pattern differs:
         AAAB → AABB → ABBC → BBCC → ...
         A and B rewards are always available (restartable), while C only becomes
@@ -156,6 +159,14 @@ def format_multi_table_html(results: list, queries: list[str], max_results: int)
         C is available on roughly 8 of them, so the weight is:
           (max(A,B) * 2 + C * 8) / 10
         """
+        # Check if this is a multi-table mission (has A/B/C keys)
+        # vs single-table (all items keyed by "-")
+        has_rotations = any(k in ("A", "B", "C") for v in items_dict.values() for k in v.keys())
+
+        if not has_rotations:
+            # Single reward table: total drop chance across all items
+            return sum(c for v in items_dict.values() for c in v.values())
+
         a = sum(v.get("A", 0) for v in items_dict.values())
         b = sum(v.get("B", 0) for v in items_dict.values())
         c = sum(v.get("C", 0) for v in items_dict.values())
