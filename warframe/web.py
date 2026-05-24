@@ -129,14 +129,14 @@ def format_multi_table_html(results: list, queries: list[str], max_results: int)
     Returns:
         HTML string containing the results table.
     """
-    # Group results: (location, mission_type) -> item -> rotation -> chance
+    # Group results: (location, mission_type) -> item -> {rotation: chance}
     by_location = defaultdict(lambda: defaultdict(dict))
     for result in results:
         key = (result.location, result.mission_type)
         if result.rotation not in by_location[key][result.item_name] or by_location[key][result.item_name][result.rotation] < result.chance:
             by_location[key][result.item_name][result.rotation] = result.chance
 
-    def mission_weight(items_dict: dict) -> float:
+    def mission_weight(items_dict: dict, mission_type: str) -> float:
         """Compute a relevance score for a set of items at one location.
 
         Warframe relic missions follow a 4-completion cycle: A drops on completions
@@ -148,22 +148,44 @@ def format_multi_table_html(results: list, queries: list[str], max_results: int)
           - A + B present:      (2*a + b) / 3    (= avg across 3 possible drops)
           - All three present:  (2*a + b + c) / 4 (= avg across all completions)
         Taking the max captures the scenario where the item is most likely to drop.
-        """
-        a = sum(item.get("A", 0) for item in items_dict.values())
-        b = sum(item.get("B", 0) for item in items_dict.values())
-        c = sum(item.get("C", 0) for item in items_dict.values())
 
-        weights = [a]
-        if b:
+        For Disruption missions, the rotation pattern differs:
+        AAAB → AABB → ABBC → BBCC → ...
+        A and B rewards are always available (restartable), while C only becomes
+        available after 2 prior completions. Assuming a typical ~10 round run,
+        C is available on roughly 8 of them, so the weight is:
+          (max(A,B) * 2 + C * 8) / 10
+        """
+        a = sum(v.get("A", 0) for v in items_dict.values())
+        b = sum(v.get("B", 0) for v in items_dict.values())
+        c = sum(v.get("C", 0) for v in items_dict.values())
+        weights = []
+
+        # Special case: Disruption — C only available after 2 prior completions,
+        # A and B always available (A by restarting). Assumes ~10 round run with C on 8 rounds.
+        if mission_type == "Disruption":
+            # Assume running for the A reward table exclusively, since it is available on the first three completions and can be restarted.
+            weights.append(a)
+            # Assume running for the B reward table exclusively, since it is always available
+            weights.append(b)
+            # Assume running for the C reward table past the second completion
+            # This captures the scenario where the item is most likely to drop from the C reward table.
+            weights.append((max(a, b) * 2 + c * 8) / 10)
+        else:
+            # Assume running only the first two completion cycles for the A reward table
+            weights.append(a)
+            # Assume running only up to the third completion cycle for the B reward table
             weights.append((2 * a + b) / 3)
-        if c:
+            # Assume running up to the fourth completion cycle for the C reward table
             weights.append((2 * a + b + c) / 4)
+
+        # Return the weight of the optimal completion strategy for this item at this location (the max of the available weighted averages).
         return max(weights)
 
     # Sort locations by mission weight desc, then more items first, then best chance
     def sort_key(entry):
         (location, mission_type), items_dict = entry
-        mw = mission_weight(items_dict)
+        mw = mission_weight(items_dict, mission_type)
         num_items = len(items_dict)
         best_chance = max(c for v in items_dict.values() for c in v.values())
         return mw, num_items, best_chance
@@ -187,13 +209,13 @@ def format_multi_table_html(results: list, queries: list[str], max_results: int)
     rows = []
     for idx, ((location, mission_type), items_dict) in enumerate(sorted_locations if max_results == 0 else sorted_locations[:max_results], 1):
         row_cells = f"<td>{idx}</td><td>{location}</td><td>{mission_type}</td>"
-        mw = mission_weight(items_dict)
+        mw = mission_weight(items_dict, mission_type)
         for item in item_columns:
             if item in items_dict:
                 rotations = items_dict[item]
                 # Per-item weight: apply the same weighted-average formula to just this
                 # item's drops. This lets column headers sort by that item's relevance.
-                iw = mission_weight({item: rotations})
+                iw = mission_weight({item: dict(rotations)}, mission_type)
                 rot_strs = [f"{rot}:{chance:.2f}%" for rot, chance in sorted(rotations.items())]
                 row_cells += f'<td class="chance" data-weight="{iw:.4f}">{" ".join(rot_strs)}</td>'
             else:
