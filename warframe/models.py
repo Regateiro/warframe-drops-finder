@@ -38,6 +38,7 @@ class Mission:
         "Disruption": 240,
         "Excavation": 180,
         "Rush": 120,
+        "Infested Salvage": 210,
     }
 
     name: str
