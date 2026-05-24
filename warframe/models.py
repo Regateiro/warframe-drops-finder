@@ -39,6 +39,7 @@ class Mission:
         "Excavation": 180,
         "Rush": 120,
         "Infested Salvage": 210,
+        "Legacyte Harvest": 180,
     }
 
     name: str
