@@ -16,6 +16,7 @@ The caching strategy:
 """
 
 # Standard library imports for file I/O, networking, and time
+import fcntl
 import json
 import os
 import time
@@ -27,6 +28,8 @@ from typing import Any
 API_URL = "https://drops.warframestat.us/data/all.json"
 # Local cache file to store fetched data
 CACHE_FILE = ".drop_cache.json"
+# Lock file to coordinate cache access across gunicorn workers
+LOCK_FILE = CACHE_FILE + ".lock"
 # Cache time-to-live in seconds (86400 = 24 hours)
 CACHE_MAX_AGE = 86400
 # Minimum age before force_refresh takes effect (300 = 5 minutes)
@@ -95,32 +98,70 @@ def load_drop_data() -> tuple[dict[str, Any], float | None, bool]:
             return refresh_drop_data()
 
 
+def _read_cache_safe() -> tuple[dict[str, Any] | None, float | None, bool]:
+    """Try to read cache, return data or None if missing/corrupted."""
+    if not os.path.exists(CACHE_FILE):
+        return None, None, False
+    try:
+        with open(CACHE_FILE) as f:
+            return json.load(f), os.path.getmtime(CACHE_FILE), False
+    except (json.JSONDecodeError, IOError) as e:
+        print(f"Cache corrupted: {e}")
+        return None, None, False
+
+
 def refresh_drop_data() -> tuple[dict[str, Any] | None, float | None, bool]:
-    """Fetch fresh data from the API and update cache.
+    """Fetch fresh data from the API and update cache atomically.
 
     Makes an HTTP request to the WarframeStat.us API to get the latest
     drop table data. If the request fails, falls back to existing cache
-    if available. If both fail, returns `(None, True)` so callers can
-    handle gracefully instead of crashing.
+    if available. If both fail, returns `(None, None, False)` so callers
+    can handle gracefully instead of crashing.
+
+    Uses a file lock to coordinate between gunicorn workers (only one
+    worker fetches from API at a time; others use existing cache).
+    Writes cache atomically (temp file + rename) so concurrent readers
+    never see a partial file.
     """
+    # Try non-blocking exclusive lock — if another worker is already
+    # refreshing, just use whatever cache exists (even if expired).
+    lock_fd = None
     try:
-        # Create HTTP request with User-Agent header (some APIs require it)
-        request = urllib.request.Request(API_URL, headers={"User-Agent": "Mozilla/5.0"})
-        # Open URL with 60-second timeout
-        with urllib.request.urlopen(request, timeout=60) as response:
-            # Read response body and parse JSON
-            data = json.loads(response.read())
-    except urllib.error.URLError as e:
-        # API request failed -> try to use existing cache
-        print(f"Failed to fetch data: {e}")
+        lock_fd = open(LOCK_FILE, "w")
+        try:
+            fcntl.flock(lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except (IOError, OSError):
+            lock_fd = None
+            cached = _read_cache_safe()
+            return cached if cached[0] is not None else (None, None, False)
+    except OSError:
+        lock_fd = None
+
+    try:
+        # Double-check: another worker may have refreshed while we waited
         if os.path.exists(CACHE_FILE):
-            with open(CACHE_FILE) as f:
-                return json.load(f), os.path.getmtime(CACHE_FILE), False
-        # No cache available to fall back on — caller should notify user
-        return None, None, False
+            age = time.time() - os.path.getmtime(CACHE_FILE)
+            if age < FORCE_REFRESH_MIN_AGE:
+                with open(CACHE_FILE) as f:
+                    return json.load(f), os.path.getmtime(CACHE_FILE), False
 
-    # Write fresh data to cache file for future use
-    with open(CACHE_FILE, "w") as f:
-        json.dump(data, f)
+        try:
+            request = urllib.request.Request(API_URL, headers={"User-Agent": "Mozilla/5.0"})
+            with urllib.request.urlopen(request, timeout=60) as response:
+                data = json.loads(response.read())
+        except urllib.error.URLError as e:
+            print(f"Failed to fetch data: {e}")
+            cached = _read_cache_safe()
+            return cached if cached[0] is not None else (None, None, False)
 
-    return data, os.path.getmtime(CACHE_FILE), True
+        # Atomic write: temp file then rename (prevents partial reads)
+        tmp_file = CACHE_FILE + ".tmp"
+        with open(tmp_file, "w") as f:
+            json.dump(data, f)
+        os.replace(tmp_file, CACHE_FILE)
+
+        return data, os.path.getmtime(CACHE_FILE), True
+    finally:
+        if lock_fd is not None:
+            fcntl.flock(lock_fd, fcntl.LOCK_UN)
+            lock_fd.close()
