@@ -59,10 +59,10 @@ def iter_sortie_drops(parser, data, query, exact=False):
     return parser._iter_sortie_drops(query, exact)
 
 
-def iter_cetus_drops(parser, data, query, exact=False):
+def iter_bounty_drops(parser, data, query, exact=False):
     parser._data = data
     parser._recache()
-    return parser._iter_cetus_drops(query, exact)
+    return parser._iter_bounty_drops(query, exact)
 
 
 def search_items(parser, data, query, exact=False):
@@ -162,7 +162,7 @@ def sample_data():
         ],
         "cetusBountyRewards": [
             {
-                "place": "Fortuna",
+                "bountyLevel": "Level 1 - 10 Cetus Bounty",
                 "rewards": {
                     "A": [{"itemName": "Cetus Wrait", "chance": 5.0}],
                 },
@@ -327,9 +327,9 @@ class TestIterSortieDrops:
         assert len(results) == 1
 
 
-class TestIterCetusDrops:
-    def test_finds_cetus_drops(self, parser, sample_data):
-        results = iter_cetus_drops(parser, sample_data, "Cetus Wrait")
+class TestIterBountyDrops:
+    def test_finds_bounty_drops(self, parser, sample_data):
+        results = iter_bounty_drops(parser, sample_data, "Cetus Wrait")
         assert len(results) == 1
 
 

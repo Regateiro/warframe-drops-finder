@@ -11,11 +11,10 @@ Each function takes the data dictionary, a query string, and an optional
 exact flag to control substring vs exact matching.
 """
 
-# chain from_iterable is used to flatten results from multiple iterators
+import re
 from itertools import chain
 from typing import Any, Callable
 
-# Import DropResult model for type hints and return values
 from .models import DropResult
 
 
@@ -33,8 +32,6 @@ def make_match_fn(query: str, exact: bool) -> Callable[[str], bool]:
     Returns:
         A callable that takes an item name string and returns True if it matches the query.
     """
-    # Case-insensitive: compare lowercase versions of query and item name
-    # Exact: require full string match; Substring: check if query is contained
     return lambda name: (query.lower() == name.lower() if exact else query.lower() in name.lower())
 
 
@@ -368,19 +365,66 @@ def iter_sortie_drops(data: dict[str, Any], query: str, exact: bool = False) -> 
     return results
 
 
-# ============== Cetus/Fortuna Drop Tables ==============
+# ============== Bounty Drop Tables (Dynamic) ==============
 
 
-def iter_cetus_drops(data: dict[str, Any], query: str, exact: bool = False) -> list[DropResult]:
-    """Search Cetus/Fortuna bounty rewards.
+def _find_bounty_keys(data: dict[str, Any]) -> list[str]:
+    """Detect bounty reward keys by structure.
 
-    Open world areas (Cetus on Earth, Fortuna on Venus) have bounty missions
-    offered by NPCs. Each bounty has rewards organized by tier.
+    Scans all top-level keys in the data dict and returns those whose
+    values are lists of dicts containing both 'bountyLevel' and 'rewards'.
 
-    Source data structure:
-        data["cetusBountyRewards"] = [
+    Args:
+        data: Full drop table data dictionary from the API.
+
+    Returns:
+        List of key names that match the bounty table structure.
+    """
+    bounty_keys: list[str] = []
+    for key, value in data.items():
+        if isinstance(value, list) and value and isinstance(value[0], dict):
+            if "bountyLevel" in value[0] and "rewards" in value[0]:
+                bounty_keys.append(key)
+    return bounty_keys
+
+
+def _camel_to_title(name: str) -> str:
+    """Convert a camelCase key to a title-case location name.
+
+    Examples:
+        "cetusBountyRewards" -> "Cetus"
+        "deimosRewards" -> "Deimos"
+        "solarisBountyRewards" -> "Solaris"
+        "entratiLabRewards" -> "Entrati Lab"
+        "hexRewards" -> "Hex"
+
+    Strips common suffixes ('Rewards', 'BountyRewards') then splits
+    camelCase boundaries into words.
+
+    Args:
+        name: A camelCase string.
+
+    Returns:
+        Title-cased location name.
+    """
+    # Strip suffixes that don't contribute to the location name
+    stripped = re.sub(r"(?:Bounty)?Rewards$", "", name)
+    # Insert space before uppercase letters that follow lowercase letters
+    words = re.sub(r"([a-z])([A-Z])", r"\1 \2", stripped)
+    return words.title()
+
+
+def iter_bounty_drops(data: dict[str, Any], query: str, exact: bool = False) -> list[DropResult]:
+    """Search all bounty reward tables for matching items.
+
+    Automatically discovers bounty tables by scanning for top-level keys
+    whose values are lists of dicts with 'bountyLevel' and 'rewards' fields.
+    New bounty sources added to the API are picked up without code changes.
+
+    Source data structure (all bounty tables share this shape):
+        data[key] = [
             {
-                place: "Cetus" | "Fortuna",
+                bountyLevel: "Level 5 - 15 Cambion Drift Bounty",
                 rewards: {tier: [items]}
             }
         ]
@@ -396,17 +440,17 @@ def iter_cetus_drops(data: dict[str, Any], query: str, exact: bool = False) -> l
     results: list[DropResult] = []
     match_fn = make_match_fn(query, exact)
 
-    # Iterate over each bounty
-    for bounty in data.get("cetusBountyRewards", []):
-        place = bounty.get("place", "Cetus Bounty")
-        rewards = bounty.get("rewards", {})
-        if isinstance(rewards, dict):
-            for tier, items in rewards.items():
-                for item in items:
-                    item_name = item.get("itemName", "")
-                    if match_fn(item_name):
-                        # Location format: "Cetus: Place Name"
-                        results.append(DropResult(item_name, item["chance"], f"Cetus: {place}", "", tier))
+    for key in _find_bounty_keys(data):
+        location_prefix = _camel_to_title(key)
+        for bounty in data[key]:
+            place = bounty.get("bountyLevel", f"{location_prefix} Bounty")
+            rewards = bounty.get("rewards", {})
+            if isinstance(rewards, dict):
+                for tier, items in rewards.items():
+                    for item in items:
+                        item_name = item.get("itemName", "")
+                        if match_fn(item_name):
+                            results.append(DropResult(item_name, item["chance"], f"{location_prefix}: {place}", "", tier))
 
     return results
 
@@ -423,7 +467,7 @@ ITERATORS: list[Callable[[dict[str, Any], str, bool], list[DropResult]]] = [
     iter_key_drops,
     iter_transient_drops,
     iter_sortie_drops,
-    iter_cetus_drops,
+    iter_bounty_drops,
 ]
 
 

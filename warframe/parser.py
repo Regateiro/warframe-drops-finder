@@ -168,7 +168,7 @@ class DropDataParser:
         - Key rewards
         - Transient rewards
         - Sortie rewards
-        - Cetus/Fortuna bounty rewards
+        - Bounty rewards (auto-discovered by structure)
 
         Returns:
             Sorted list of unique item name strings.
@@ -218,13 +218,16 @@ class DropDataParser:
         for reward in self._data.get("sortieRewards", []):
             items.add(reward.get("itemName", ""))
 
-        # Extract from cetus bounty rewards
-        for bounty in self._data.get("cetusBountyRewards", []):
-            rewards = bounty.get("rewards", {})
-            if isinstance(rewards, dict):
-                for tier_list in rewards.values():
-                    for item in tier_list:
-                        items.add(item.get("itemName", ""))
+        # Extract from bounty rewards (auto-discovered by structure)
+        from .iterators import _find_bounty_keys
+
+        for key in _find_bounty_keys(self._data):
+            for bounty in self._data[key]:
+                rewards = bounty.get("rewards", {})
+                if isinstance(rewards, dict):
+                    for tier_list in rewards.values():
+                        for item in tier_list:
+                            items.add(item.get("itemName", ""))
 
         return sorted(items)  # Return alphabetically sorted
 
@@ -286,7 +289,7 @@ class DropDataParser:
             self._iter_key_drops,
             self._iter_transient_drops,
             self._iter_sortie_drops,
-            self._iter_cetus_drops,
+            self._iter_bounty_drops,
         ]
         # Run each iterator and flatten results
         results = list(chain.from_iterable(it(query, exact) for it in iterators))
@@ -534,10 +537,11 @@ class DropDataParser:
 
         return results
 
-    def _iter_cetus_drops(self, query: str, exact: bool = False) -> list[DropResult]:
-        """Internal: iterate Cetus bounty drop results matching query.
+    def _iter_bounty_drops(self, query: str, exact: bool = False) -> list[DropResult]:
+        """Internal: iterate all bounty drop results matching query.
 
-        Searches Cetus/Fortuna bounty rewards for items matching the query.
+        Auto-discovers bounty tables by structure. Delegates to the
+        dynamic bounty iterator from the iterators module.
 
         Args:
             query: Search string.
@@ -546,26 +550,6 @@ class DropDataParser:
         Returns:
             List of matching DropResult.
         """
-        data = self._data
-        results: list[DropResult] = []
-        match_fn = self._make_match_fn(query, exact)
+        from .iterators import iter_bounty_drops
 
-        for bounty in data.get("cetusBountyRewards", []):
-            place = bounty.get("place", "Cetus Bounty")
-            rewards = bounty.get("rewards", {})
-            if isinstance(rewards, dict):
-                for tier, items in rewards.items():
-                    for item in items:
-                        item_name = item.get("itemName", "")
-                        if match_fn(item_name):
-                            results.append(
-                                DropResult(
-                                    item_name,
-                                    item["chance"],
-                                    f"Cetus: {place}",
-                                    Mission(""),
-                                    tier,
-                                )
-                            )
-
-        return results
+        return iter_bounty_drops(self._data, query, exact)
