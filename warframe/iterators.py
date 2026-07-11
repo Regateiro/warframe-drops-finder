@@ -15,7 +15,7 @@ import re
 from itertools import chain
 from typing import Any, Callable
 
-from .models import DropResult
+from .models import DropResult, Mission
 
 
 def make_match_fn(query: str, exact: bool) -> Callable[[str], bool]:
@@ -82,13 +82,13 @@ def iter_mission_drops(data: dict[str, Any], query: str, exact: bool = False) ->
                     for item in items:
                         item_name = item.get("itemName", "")
                         if match_fn(item_name):
-                            results.append(DropResult(item_name, item["chance"], location, game_mode, tier))
+                            results.append(DropResult(item_name, item["chance"], location, Mission(game_mode), tier))
             elif isinstance(rewards, list):
                 # List format: no rotation tier, use "-" as placeholder
                 for item in rewards:
                     item_name = item.get("itemName", "")
                     if match_fn(item_name):
-                        results.append(DropResult(item_name, item["chance"], location, game_mode, "-"))
+                        results.append(DropResult(item_name, item["chance"], location, Mission(game_mode), "-"))
 
     return results
 
@@ -139,7 +139,7 @@ def iter_relic_drops(data: dict[str, Any], query: str, exact: bool = False) -> l
                         item_name,
                         reward["chance"],
                         f"Relic: {tier} {relic_name}",
-                        "",
+                        Mission(""),
                         state,
                     )
                 )
@@ -182,7 +182,7 @@ def iter_mod_drops(data: dict[str, Any], query: str, exact: bool = False) -> lis
             enemy_name = enemy.get("enemyName", "")
             if match_fn(mod_name):
                 # Location format: "Mod drop: Enemy Name"
-                results.append(DropResult(mod_name, enemy["chance"], f"Mod drop: {enemy_name}", "", "-"))
+                results.append(DropResult(mod_name, enemy["chance"], f"Mod drop: {enemy_name}", Mission(""), "-"))
 
     return results
 
@@ -229,7 +229,7 @@ def iter_blueprint_drops(data: dict[str, Any], query: str, exact: bool = False) 
                         item_name,
                         enemy["chance"],
                         f"Blueprint: {enemy['enemyName']}",
-                        "",
+                        Mission(""),
                         "-",
                     )
                 )
@@ -275,7 +275,7 @@ def iter_key_drops(data: dict[str, Any], query: str, exact: bool = False) -> lis
                     item_name = item.get("itemName", "")
                     if match_fn(item_name):
                         # Location format: "Key: Key Name"
-                        results.append(DropResult(item_name, item["chance"], f"Key: {key_name}", "", tier))
+                        results.append(DropResult(item_name, item["chance"], f"Key: {key_name}", Mission(""), tier))
 
     return results
 
@@ -322,7 +322,7 @@ def iter_transient_drops(data: dict[str, Any], query: str, exact: bool = False) 
                         item_name,
                         reward["chance"],
                         f"Transient: {place}",
-                        "",
+                        Mission(""),
                         rotation or "-",
                     )
                 )
@@ -360,7 +360,7 @@ def iter_sortie_drops(data: dict[str, Any], query: str, exact: bool = False) -> 
         item_name = reward.get("itemName", "")
         if match_fn(item_name):
             # Location is always "Sortie"
-            results.append(DropResult(item_name, reward["chance"], "Sortie", "", "-"))
+            results.append(DropResult(item_name, reward["chance"], "Sortie", Mission(""), "-"))
 
     return results
 
@@ -450,7 +450,7 @@ def iter_bounty_drops(data: dict[str, Any], query: str, exact: bool = False) -> 
                     for item in items:
                         item_name = item.get("itemName", "")
                         if match_fn(item_name):
-                            results.append(DropResult(item_name, item["chance"], f"{location_prefix}: {place}", "", tier))
+                            results.append(DropResult(item_name, item["chance"], f"{location_prefix}: {place}", Mission(""), tier))
 
     return results
 
