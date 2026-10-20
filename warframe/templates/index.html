@@ -35,11 +35,14 @@
                     <input type="text" name="mission_type" value="{{ mission_type }}" placeholder="Mission type (e.g. Defense, Survival)">
                 </label>
                 <label>
-                    <input type="checkbox" name="partial" {{ partial_checked }}> Partial match
+                    <input type="checkbox" name="exact" {{ exact_checked }}> Exact match
                 </label>
             </div>
         </div>
     </form>
+    {% if error %}
+    <p class="error">Drop data is temporarily unavailable: {{ error }}</p>
+    {% endif %}
     {% if results_html %}
     {{ results_html|safe }}
     {% elif query %}

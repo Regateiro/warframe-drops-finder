@@ -1,45 +1,45 @@
 """
-Search iterators for Warframe drop table data.
+Drop table iterators for Warframe drop table data.
 
-This module provides functions for iterating over different sources
-of drop table data from the Warframe game. Each iterator searches
-a specific data source (missions, relics, mods, etc.) and returns
-matching DropResult objects sorted by drop chance (descending).
+Each iterator yields every DropResult from one data source of the API.
+They take only the raw data dictionary (no query): the parser flattens
+their output once per data load into a per-item index, making searches
+fast regardless of dataset size.
 
 The iterators work on the raw dictionary data structure from the API.
-Each function takes the data dictionary, a query string, and an optional
-exact flag to control substring vs exact matching.
+Entries with a null drop chance (present in upstream data for a few mods
+and resources) are skipped, as they carry no information.
+
+Data sources not iterated on purpose:
+- enemyModTables / enemyBlueprintTables: per-enemy rollups of the same
+  mods/blueprints already covered by modLocations/blueprintLocations, so
+  they add no new item names or locations.
+- resourceByAvatar / sigilByAvatar / additionalItemByAvatar ARE covered
+  (see iter_avatar_drops).
 """
 
 import re
-from itertools import chain
-from typing import Any, Callable
+from collections.abc import Iterator
+from typing import Any
 
 from .models import DropResult, Mission
 
 
-def make_match_fn(query: str, exact: bool) -> Callable[[str], bool]:
-    """Create a case-insensitive match function for item names.
+def _chance(entry: dict[str, Any]) -> float | None:
+    """Return the drop chance of an entry, or None if it is null/missing.
 
-    This factory function creates a predicate function that tests whether
-    an item name matches the given query. The matching is always case-insensitive.
-
-    Args:
-        query: The search query string.
-        exact: If True, match item names exactly (case-insensitive).
-               If False, match as substring (query must be contained in item name).
-
-    Returns:
-        A callable that takes an item name string and returns True if it matches the query.
+    Upstream data occasionally has `"chance": null` (e.g. legendary mods
+    with no per-enemy chance). Such entries are skipped by all iterators.
     """
-    return lambda name: (query.lower() == name.lower() if exact else query.lower() in name.lower())
+    chance = entry.get("chance")
+    return chance if isinstance(chance, (int, float)) else None
 
 
 # ============== Mission Drop Tables ==============
 
 
-def iter_mission_drops(data: dict[str, Any], query: str, exact: bool = False) -> list[DropResult]:
-    """Search mission drop tables for matching items.
+def iter_mission_drops(data: dict[str, Any]) -> Iterator[DropResult]:
+    """Yield mission drop results.
 
     Mission drops come from regular gameplay missions on different planets.
     Each planet has multiple missions, each with a game mode and rewards.
@@ -54,54 +54,38 @@ def iter_mission_drops(data: dict[str, Any], query: str, exact: bool = False) ->
                 }
             }
         }
-
-    Args:
-        data: Full drop table data dictionary from the API.
-        query: Search string to match against item names.
-        exact: If True, require exact match. If False, substring match.
-
-    Returns:
-        List of DropResult for items matching the query.
     """
-    results: list[DropResult] = []
-    match_fn = make_match_fn(query, exact)
-
-    # Iterate over each planet (Earth, Mars, Venus, etc.)
     for planet, missions in data.get("missionRewards", {}).items():
-        # Iterate over each mission on this planet
-        for mission, details in missions.items():
+        for mission_name, details in missions.items():
             game_mode = details.get("gameMode", "")
             rewards = details.get("rewards", {})
             # Location format: "Planet - Mission Name"
-            location = f"{planet} - {mission}"
+            location = f"{planet} - {mission_name}"
+            mission = Mission(game_mode)
 
             # Rewards can be a dict {tier: [items]} or list [items]
             if isinstance(rewards, dict):
-                # Dict format: rewards have rotation tiers (A, B, C)
                 for tier, items in rewards.items():
                     for item in items:
-                        item_name = item.get("itemName", "")
-                        if match_fn(item_name):
-                            results.append(DropResult(item_name, item["chance"], location, Mission(game_mode), tier))
+                        chance = _chance(item)
+                        if chance is not None:
+                            yield DropResult(item.get("itemName", ""), chance, location, mission, tier)
             elif isinstance(rewards, list):
-                # List format: no rotation tier, use "-" as placeholder
                 for item in rewards:
-                    item_name = item.get("itemName", "")
-                    if match_fn(item_name):
-                        results.append(DropResult(item_name, item["chance"], location, Mission(game_mode), "-"))
-
-    return results
+                    chance = _chance(item)
+                    if chance is not None:
+                        yield DropResult(item.get("itemName", ""), chance, location, mission, "-")
 
 
 # ============== Relic Drop Tables ==============
 
 
-def iter_relic_drops(data: dict[str, Any], query: str, exact: bool = False) -> list[DropResult]:
-    """Search vaulted relic drops for matching items.
+def iter_relic_drops(data: dict[str, Any]) -> Iterator[DropResult]:
+    """Yield vaulted relic drop results.
 
     Relic drops come from opening Void Relics in the Refinery.
     Each relic has a tier (Lith, Meso, Neo, Axi), a name, and a state.
-    The state affects the drop chances (Intact, Exceptional, Radiant, etc.).
+    The state affects the drop chances (Intact, Exceptional, Radiant, etc.)
 
     Source data structure:
         data["relics"] = [
@@ -112,46 +96,24 @@ def iter_relic_drops(data: dict[str, Any], query: str, exact: bool = False) -> l
                 rewards: [{itemName, chance}]
             }
         ]
-
-    Args:
-        data: Full drop table data dictionary from the API.
-        query: Search string to match against item names.
-        exact: If True, require exact match. If False, substring match.
-
-    Returns:
-        List of DropResult for items matching the query.
     """
-    results: list[DropResult] = []
-    match_fn = make_match_fn(query, exact)
-
-    # Iterate over each relic
     for relic in data.get("relics", []):
         tier = relic.get("tier", "")
         relic_name = relic.get("relicName", "")
         state = relic.get("state", "Intact")
         for reward in relic.get("rewards", []):
-            item_name = reward.get("itemName", "")
-            if match_fn(item_name):
+            chance = _chance(reward)
+            if chance is not None:
                 # Location format: "Relic: TIER NAME" (e.g., "Relic: Lith A1")
                 # Rotation field stores the relic state
-                results.append(
-                    DropResult(
-                        item_name,
-                        reward["chance"],
-                        f"Relic: {tier} {relic_name}",
-                        Mission(""),
-                        state,
-                    )
-                )
-
-    return results
+                yield DropResult(reward.get("itemName", ""), chance, f"Relic: {tier} {relic_name}", Mission(""), state)
 
 
 # ============== Mod Drop Tables ==============
 
 
-def iter_mod_drops(data: dict[str, Any], query: str, exact: bool = False) -> list[DropResult]:
-    """Search enemy drop mod locations.
+def iter_mod_drops(data: dict[str, Any]) -> Iterator[DropResult]:
+    """Yield enemy drop mod locations.
 
     Certain mods drop from specific enemy types. This iterates over
     mod locations which list which enemies can drop each mod.
@@ -163,35 +125,21 @@ def iter_mod_drops(data: dict[str, Any], query: str, exact: bool = False) -> lis
                 enemies: [{enemyName, chance}]
             }
         ]
-
-    Args:
-        data: Full drop table data dictionary from the API.
-        query: Search string to match against item names.
-        exact: If True, require exact match. If False, substring match.
-
-    Returns:
-        List of DropResult for items matching the query.
     """
-    results: list[DropResult] = []
-    match_fn = make_match_fn(query, exact)
-
-    # Iterate over each mod location
     for mod_loc in data.get("modLocations", []):
         mod_name = mod_loc.get("modName", "Unknown")
         for enemy in mod_loc.get("enemies", []):
-            enemy_name = enemy.get("enemyName", "")
-            if match_fn(mod_name):
+            chance = _chance(enemy)
+            if chance is not None:
                 # Location format: "Mod drop: Enemy Name"
-                results.append(DropResult(mod_name, enemy["chance"], f"Mod drop: {enemy_name}", Mission(""), "-"))
-
-    return results
+                yield DropResult(mod_name, chance, f"Mod drop: {enemy.get('enemyName', '')}", Mission(""), "-")
 
 
 # ============== Blueprint Drop Tables ==============
 
 
-def iter_blueprint_drops(data: dict[str, Any], query: str, exact: bool = False) -> list[DropResult]:
-    """Search enemy drop blueprint locations.
+def iter_blueprint_drops(data: dict[str, Any]) -> Iterator[DropResult]:
+    """Yield enemy drop blueprint locations.
 
     Blueprints (component parts for Warframes and weapons) drop from enemies.
     This iterates over blueprint locations which list which enemies drop each blueprint.
@@ -204,44 +152,22 @@ def iter_blueprint_drops(data: dict[str, Any], query: str, exact: bool = False) 
                 enemies: [{enemyName, chance}]
             }
         ]
-
-    Args:
-        data: Full drop table data dictionary from the API.
-        query: Search string to match against item names.
-        exact: If True, require exact match. If False, substring match.
-
-    Returns:
-        List of DropResult for items matching the query.
     """
-    results: list[DropResult] = []
-    match_fn = make_match_fn(query, exact)
-
-    # Iterate over each blueprint location
     for bp_loc in data.get("blueprintLocations", []):
         # Use blueprintName if available, fall back to itemName
         bp_name = bp_loc.get("blueprintName", bp_loc.get("itemName", "Unknown"))
         for enemy in bp_loc.get("enemies", []):
-            item_name = bp_name
-            if match_fn(item_name):
+            chance = _chance(enemy)
+            if chance is not None:
                 # Location format: "Blueprint: Enemy Name"
-                results.append(
-                    DropResult(
-                        item_name,
-                        enemy["chance"],
-                        f"Blueprint: {enemy['enemyName']}",
-                        Mission(""),
-                        "-",
-                    )
-                )
-
-    return results
+                yield DropResult(bp_name, chance, f"Blueprint: {enemy.get('enemyName', '')}", Mission(""), "-")
 
 
 # ============== Key Drop Tables ==============
 
 
-def iter_key_drops(data: dict[str, Any], query: str, exact: bool = False) -> list[DropResult]:
-    """Search mission key reward tables.
+def iter_key_drops(data: dict[str, Any]) -> Iterator[DropResult]:
+    """Yield mission key reward tables.
 
     Mission keys (Junction keys, Orokin keys, etc.) unlock specific missions.
     Each key has rewards organized by tier.
@@ -253,38 +179,24 @@ def iter_key_drops(data: dict[str, Any], query: str, exact: bool = False) -> lis
                 rewards: {tier: [items]}
             }
         ]
-
-    Args:
-        data: Full drop table data dictionary from the API.
-        query: Search string to match against item names.
-        exact: If True, require exact match. If False, substring match.
-
-    Returns:
-        List of DropResult for items matching the query.
     """
-    results: list[DropResult] = []
-    match_fn = make_match_fn(query, exact)
-
-    # Iterate over each key
     for key in data.get("keyRewards", []):
         key_name = key.get("keyName", "Unknown")
         rewards = key.get("rewards", {})
         if isinstance(rewards, dict):
             for tier, items in rewards.items():
                 for item in items:
-                    item_name = item.get("itemName", "")
-                    if match_fn(item_name):
+                    chance = _chance(item)
+                    if chance is not None:
                         # Location format: "Key: Key Name"
-                        results.append(DropResult(item_name, item["chance"], f"Key: {key_name}", Mission(""), tier))
-
-    return results
+                        yield DropResult(item.get("itemName", ""), chance, f"Key: {key_name}", Mission(""), tier)
 
 
 # ============== Transient Drop Tables ==============
 
 
-def iter_transient_drops(data: dict[str, Any], query: str, exact: bool = False) -> list[DropResult]:
-    """Search transient mission rewards (Rush, Defection, etc.).
+def iter_transient_drops(data: dict[str, Any]) -> Iterator[DropResult]:
+    """Yield transient mission rewards (Rush, Defection, etc.).
 
     Transient missions are special game modes that appear periodically.
     They reward items with specific rotations (A, B, C) that affect drop chances.
@@ -296,45 +208,23 @@ def iter_transient_drops(data: dict[str, Any], query: str, exact: bool = False) 
                 rewards: [{itemName, chance, rotation}]
             }
         ]
-
-    Args:
-        data: Full drop table data dictionary from the API.
-        query: Search string to match against item names.
-        exact: If True, require exact match. If False, substring match.
-
-    Returns:
-        List of DropResult for items matching the query.
     """
-    results: list[DropResult] = []
-    match_fn = make_match_fn(query, exact)
-
-    # Iterate over each transient mission type
     for transient in data.get("transientRewards", []):
         place = transient.get("objectiveName", "Unknown")
         for reward in transient.get("rewards", []):
-            item_name = reward.get("itemName", "")
-            rotation = reward.get("rotation", "")
-            if match_fn(item_name):
+            chance = _chance(reward)
+            if chance is not None:
+                rotation = reward.get("rotation", "")
                 # Location format: "Transient: Mission Name"
                 # Use "-" as placeholder if no rotation specified
-                results.append(
-                    DropResult(
-                        item_name,
-                        reward["chance"],
-                        f"Transient: {place}",
-                        Mission(""),
-                        rotation or "-",
-                    )
-                )
-
-    return results
+                yield DropResult(reward.get("itemName", ""), chance, f"Transient: {place}", Mission(""), rotation or "-")
 
 
 # ============== Sortie Drop Tables ==============
 
 
-def iter_sortie_drops(data: dict[str, Any], query: str, exact: bool = False) -> list[DropResult]:
-    """Search Sortie reward tables.
+def iter_sortie_drops(data: dict[str, Any]) -> Iterator[DropResult]:
+    """Yield Sortie reward tables.
 
     Sorties are daily special missions with three stages. Each day has
     random mission types and a single reward table.
@@ -343,26 +233,11 @@ def iter_sortie_drops(data: dict[str, Any], query: str, exact: bool = False) -> 
         data["sortieRewards"] = [
             {itemName, chance}
         ]
-
-    Args:
-        data: Full drop table data dictionary from the API.
-        query: Search string to match against item names.
-        exact: If True, require exact match. If False, substring match.
-
-    Returns:
-        List of DropResult for items matching the query.
     """
-    results: list[DropResult] = []
-    match_fn = make_match_fn(query, exact)
-
-    # Iterate over each sortie reward
     for reward in data.get("sortieRewards", []):
-        item_name = reward.get("itemName", "")
-        if match_fn(item_name):
-            # Location is always "Sortie"
-            results.append(DropResult(item_name, reward["chance"], "Sortie", Mission(""), "-"))
-
-    return results
+        chance = _chance(reward)
+        if chance is not None:
+            yield DropResult(reward.get("itemName", ""), chance, "Sortie", Mission(""), "-")
 
 
 # ============== Bounty Drop Tables (Dynamic) ==============
@@ -414,8 +289,8 @@ def _camel_to_title(name: str) -> str:
     return words.title()
 
 
-def iter_bounty_drops(data: dict[str, Any], query: str, exact: bool = False) -> list[DropResult]:
-    """Search all bounty reward tables for matching items.
+def iter_bounty_drops(data: dict[str, Any]) -> Iterator[DropResult]:
+    """Yield all bounty reward tables.
 
     Automatically discovers bounty tables by scanning for top-level keys
     whose values are lists of dicts with 'bountyLevel' and 'rewards' fields.
@@ -428,18 +303,7 @@ def iter_bounty_drops(data: dict[str, Any], query: str, exact: bool = False) -> 
                 rewards: {tier: [items]}
             }
         ]
-
-    Args:
-        data: Full drop table data dictionary from the API.
-        query: Search string to match against item names.
-        exact: If True, require exact match. If False, substring match.
-
-    Returns:
-        List of DropResult for items matching the query.
     """
-    results: list[DropResult] = []
-    match_fn = make_match_fn(query, exact)
-
     for key in _find_bounty_keys(data):
         location_prefix = _camel_to_title(key)
         for bounty in data[key]:
@@ -448,18 +312,75 @@ def iter_bounty_drops(data: dict[str, Any], query: str, exact: bool = False) -> 
             if isinstance(rewards, dict):
                 for tier, items in rewards.items():
                     for item in items:
-                        item_name = item.get("itemName", "")
-                        if match_fn(item_name):
-                            results.append(DropResult(item_name, item["chance"], f"{location_prefix}: {place}", Mission(""), tier))
-
-    return results
+                        chance = _chance(item)
+                        if chance is not None:
+                            yield DropResult(item.get("itemName", ""), chance, f"{location_prefix}: {place}", Mission(""), tier)
 
 
-# ============== Combined Search ==============
+# ============== Syndicate Offerings ==============
 
-# All iterators combined - used by search_items()
+# Not previously searched: ~216 extra items (Conclave skins, syndicate augments,
+# etc.)
+
+
+def iter_syndicate_drops(data: dict[str, Any]) -> Iterator[DropResult]:
+    """Yield syndicate offering rewards.
+
+    Each syndicate maps to a list of standing offerings with a fixed
+    purchase chance.
+
+    Source data structure:
+        data["syndicates"] = {
+            syndicateName: [
+                {item, chance, rarity, place, standing, cost}
+            ]
+        }
+    """
+    for syndicate, entries in data.get("syndicates", {}).items():
+        if not isinstance(entries, list):
+            continue
+        for entry in entries:
+            chance = _chance(entry)
+            if chance is not None:
+                place = entry.get("place") or syndicate
+                # Location format: "Syndicate: Cephalon Suda, Neutral"
+                yield DropResult(entry.get("item", ""), chance, f"Syndicate: {place}", Mission(""), "-")
+
+
+# ============== Avatar (per-enemy source) Drop Tables ==============
+
+# Table key -> location prefix. These tables share the shape
+#   data[key] = [{source: "Enemy Name", items: [{item, chance, rarity}]}]
+AVATAR_TABLES: dict[str, str] = {
+    "resourceByAvatar": "Resource drop",
+    "sigilByAvatar": "Sigil drop",
+    "additionalItemByAvatar": "Bonus drop",
+}
+
+
+def iter_avatar_drops(data: dict[str, Any]) -> Iterator[DropResult]:
+    """Yield per-source (avatar) drop tables.
+
+    Covers resource, sigil, and additional item drops by enemy source,
+    discovered from AVATAR_TABLES.
+
+    Not previously searched: ~107 extra items.
+    """
+    for key, label in AVATAR_TABLES.items():
+        for entry in data.get(key, []):
+            source = entry.get("source", "")
+            for item in entry.get("items", []):
+                chance = _chance(item)
+                if chance is not None:
+                    # Location format: "Resource drop: Techrot Motherboard Cluster"
+                    yield DropResult(item.get("item", ""), chance, f"{label}: {source}", Mission(""), "-")
+
+
+# ============== Combined Collection ==============
+
+# All iterators combined - used by DropDataParser._recache()
 # This list makes it easy to iterate over all data sources at once
-ITERATORS: list[Callable[[dict[str, Any], str, bool], list[DropResult]]] = [
+ITERATORS = [
     iter_mission_drops,
     iter_relic_drops,
     iter_mod_drops,
@@ -468,25 +389,21 @@ ITERATORS: list[Callable[[dict[str, Any], str, bool], list[DropResult]]] = [
     iter_transient_drops,
     iter_sortie_drops,
     iter_bounty_drops,
+    iter_syndicate_drops,
+    iter_avatar_drops,
 ]
 
 
-def search_items(data: dict[str, Any], query: str, exact: bool = False) -> list[DropResult]:
-    """Search all drop sources for matching items.
+def collect_all_drops(data: dict[str, Any]) -> Iterator[DropResult]:
+    """Yield every drop result from every data source.
 
-    This is the main entry point for searching across all data sources.
-    It runs each iterator function and combines the results,
-    then sorts by drop chance (highest first).
+    This is the main entry point for flattening the drop tables.
 
     Args:
         data: Full drop table data dictionary from the API.
-        query: Search string to match against item names.
-        exact: If True, require exact match. If False, substring match.
 
-    Returns:
-        All matching DropResult objects sorted by chance descending.
+    Yields:
+        DropResult objects from all data sources.
     """
-    # Chain results from all iterators together into one flat list
-    results = list(chain.from_iterable(it(data, query, exact) for it in ITERATORS))
-    # Sort by chance (highest first)
-    return sorted(results, key=lambda x: x.chance, reverse=True)
+    for iterator in ITERATORS:
+        yield from iterator(data)

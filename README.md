@@ -10,45 +10,7 @@ poetry install
 
 ## Data Source
 
-Drop data is fetched from [Warframe Stat](https://drops.warframestat.us/) and cached locally in `.drop_cache.json`. The cache is valid for 24 hours.
-
-## CLI Usage
-
-```bash
-poetry run warframe <query> [options]
-```
-
-### Arguments
-
-- `query` - Item name to search for (space or comma separated)
-
-### Options
-
-- `-r, --refresh` - Force refresh the cache
-- `-n, --num N` - Number of results to show (default: 20)
-- `-e, --exact` - Match item names exactly
-- `-m, --mission-type` - Filter by mission type (can be specified multiple times)
-
-### Examples
-
-```bash
-# Search for an item
-poetry run warframe aura
-poetry run warframe "neuroptics"
-
-# Multiple items
-poetry run warframe neptune,uranus
-poetry run warframe forma blueprints
-
-# Exact match
-poetry run warframe "galatine" --exact
-
-# Filter by mission type
-poetry run warframe neuroptics --mission-type defense
-
-# Show all results
-poetry run warframeForma -n 0
-```
+Drop data is fetched from [Warframe Stat](https://drops.warframestat.us/) and cached locally in `.drop_cache.json`, next to the project root. The cache is valid for 24 hours. Set the `CACHE_FILE` environment variable to override the cache location.
 
 ## Web Server
 
@@ -61,10 +23,10 @@ make serve
 Or directly:
 
 ```bash
-poetry run gunicorn -w 2 warframe.web:app
+poetry run gunicorn -w 2 --bind 127.0.0.1:3333 warframe.web:app
 ```
 
-The server starts on `http://localhost:8080` by default.
+The server starts on `http://localhost:3333` by default.
 
 ### Configuration
 
@@ -76,15 +38,21 @@ cp .env.example .env
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `HOST` | `127.0.0.1` | Server bind address |
-| `PORT` | `8080` | Server port |
+| `HOST` | `127.0.0.1` | Server bind address (development server only) |
+| `PORT` | `8080` | Server port (development server only) |
 | `WEB_ROOT` | `/warframe` | URL prefix (e.g., `/warframe`) |
+| `CACHE_FILE` | `.drop_cache.json` | Path to the drop data cache |
+
+> `HOST`/`PORT` are only used by the development server (`python -m warframe.web`). When running under gunicorn, pass `--bind` instead.
+
+Routes are registered both at the app root (`/`, `/api/...`, `/static/...`) and under `WEB_ROOT` (e.g. `/warframe/`, `/warframe/api/...`), so the app works when served directly as well as behind a reverse proxy that strips the prefix.
 
 ### Web Interface
 
-- Open `http://localhost:8080` in your browser
+- Open `http://localhost:3333` in your browser
 - Enter item names to search
 - Use options to filter results
+- Searches match item names as substrings by default; tick **Exact match** to require the full name
 
 ### REST API
 
@@ -99,9 +67,9 @@ GET /api/suggest-mission-types?q=<prefix>
 | Parameter | Type | Description |
 |-----------|------|-------------|
 | `q` | string | Item name to search for (required) |
-| `exact` | bool | Match exactly (optional) |
+| `exact` | bool | Require an exact item name match (optional, default: substring match) |
 | `mission_type` | string | Filter by mission type (repeatable) |
-| `n` | int | Max results (default: 0 for all) |
+| `n` | int | Max results (default: 0 for all, capped at 10000) |
 
 #### Response
 
@@ -121,23 +89,26 @@ GET /api/suggest-mission-types?q=<prefix>
 
 ```bash
 # Search via API
-curl "http://localhost:8080/api/drops?q=neuroptics"
+curl "http://localhost:3333/api/drops?q=neuroptics"
 
 # Exact match
-curl "http://localhost:8080/api/drops?q=galatine&exact=true"
+curl "http://localhost:3333/api/drops?q=galatine&exact=true"
 
 # Filter by mission type
-curl "http://localhost:8080/api/drops?q=forma&mission_type=defense"
+curl "http://localhost:3333/api/drops?q=forma&mission_type=defense"
 ```
 
 ## Development
 
 ```bash
-# Run tests
+# Run tests (also runs linters)
 make test
 
-# Run linters
+# Run linters (check-only, does not modify files)
 make lint
+
+# Auto-format the source with black + isort
+make format
 
 # Start web server
 make serve

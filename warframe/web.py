@@ -15,6 +15,7 @@ The application:
 """
 
 # Standard library imports
+import logging
 import os
 import time
 
@@ -29,11 +30,13 @@ from flask import Flask, jsonify, render_template, request, send_from_directory
 # Local imports
 from warframe.fetcher import CACHE_MAX_AGE
 from warframe.models import Mission
-from warframe.parser import DropDataParser
+from warframe.parser import DataUnavailableError, DropDataParser
 
 # Load environment variables from .env file in project root
 # This allows configuration without modifying code
 load_dotenv()
+
+logger = logging.getLogger(__name__)
 
 # Create Flask app with templates and static files
 # template_folder defaults to "templates" in the app root
@@ -73,10 +76,42 @@ def parse_queries(query: str) -> list[str]:
     return [q.strip() for q in query.split(",")[:10] if q.strip()]
 
 
+def parse_int(raw: str | None, default: int, lo: int, hi: int) -> int:
+    """Parse and clamp an integer query parameter.
+
+    Args:
+        raw: Raw parameter value (may be None or empty).
+        default: Value to return when raw is None/empty.
+        lo: Minimum allowed value.
+        hi: Maximum allowed value.
+
+    Returns:
+        The parsed value, clamped to [lo, hi], or default if raw is empty.
+
+    Raises:
+        ValueError: If raw is present but not an integer.
+    """
+    if raw is None or not raw.strip():
+        return default
+    return max(lo, min(int(raw), hi))
+
+
+def parse_bool(raw: str | None) -> bool:
+    """Parse a boolean query parameter (flag-style or explicit).
+
+    Absent -> False. Present with no value, "1", "true", "yes", or "on"
+    (checkbox default) -> True. Anything else -> False.
+    """
+    if raw is None:
+        return False
+    return raw.strip().lower() in ("", "1", "true", "yes", "on")
+
+
 # ============== Parser Instance ==============
 
-# Single parser instance for the entire application
-# Uses internal caching to avoid re-parsing on every request
+# Single parser instance for the entire application.
+# Data is loaded lazily on the first request (uses internal caching to
+# avoid re-parsing on every request).
 _parser = DropDataParser()
 
 
@@ -87,30 +122,30 @@ def run_search(query: str, exact: bool) -> list:
     """Run search for each query and combine results.
 
     Takes a comma-separated query string, parses it into individual queries,
-    runs each through the parser, and combines all results.
+    runs each through the parser, and combines all results, deduplicating
+    identical drops that appear via overlapping queries or data entries.
 
     Args:
         query: Comma-separated search queries.
         exact: If True, require exact item name match.
 
     Returns:
-        Combined list of DropResult sorted by drop chance (descending).
+        Combined deduplicated list of DropResult sorted by drop chance (descending).
     """
-    # Parse comma-separated queries into list
     queries = parse_queries(query)
     results = []
-    # Run search for each individual query
     for q in queries:
         results.extend(_parser.search_items(q, exact=exact))
-    # Sort by chance, highest first
-    return sorted(results, key=lambda x: x.chance, reverse=True)
+    # Dedupe across queries, then sort by chance, highest first
+    unique = list(dict.fromkeys(results))
+    return sorted(unique, key=lambda x: x.chance, reverse=True)
 
 
 # ============== HTML Formatting ==============
 
 
-def format_multi_table_html(results: list, queries: list[str], max_results: int) -> str:
-    """Format search results as HTML table.
+def format_multi_table_html(results: list, max_results: int) -> str:
+    """Format search results as an HTML table.
 
     Groups results by location and mission type, showing all rotations with their
     respective drop chances (e.g. "B:6.67%/C:11.06%"). Creates a table suitable for
@@ -124,18 +159,18 @@ def format_multi_table_html(results: list, queries: list[str], max_results: int)
 
     Args:
         results: List of DropResult from search.
-        queries: List of individual queries (for column headers).
         max_results: Maximum rows to show (0 = all).
 
     Returns:
-        HTML string containing the results table.
+        Rendered HTML string containing the results table.
     """
     # Group results: (location, Mission) -> item -> {rotation: chance}
     by_location = defaultdict(lambda: defaultdict(dict))
     for result in results:
         key = (result.location, result.mission_type)
-        if result.rotation not in by_location[key][result.item_name] or by_location[key][result.item_name][result.rotation] < result.chance:
-            by_location[key][result.item_name][result.rotation] = result.chance
+        rotations = by_location[key][result.item_name]
+        if result.rotation not in rotations or rotations[result.rotation] < result.chance:
+            rotations[result.rotation] = result.chance
 
     def mission_weight(items_dict: dict, mission: Mission) -> float:
         """Compute a relevance score for a set of items at one location.
@@ -154,7 +189,7 @@ def format_multi_table_html(results: list, queries: list[str], max_results: int)
         chance is used directly since there is no cycle weighting needed.
 
         For Disruption missions, the rotation pattern differs:
-        AAAB → AABB → ABBC → BBCC → ...
+        AAAB -> AABB -> ABBC -> BBCC -> ...
         A and B rewards are always available (restartable), while C only becomes
         available after 2 prior completions. Assuming a typical ~10 round run,
         C is available on roughly 8 of them, so the weight is:
@@ -198,94 +233,125 @@ def format_multi_table_html(results: list, queries: list[str], max_results: int)
         # get an unfair advantage.
         return max(weights)
 
+    # Compute each location's mission weight once (reused for sorting and row HTML)
+    weighted = [((key, items_dict), mission_weight(items_dict, key[1])) for key, items_dict in by_location.items()]
+
     # Sort locations by mission weight desc, then more items first, then best chance
     def sort_key(entry):
-        (location, mission), items_dict = entry
-        mw = mission_weight(items_dict, mission)
-        num_items = len(items_dict)
+        (key, items_dict), mw = entry
         best_chance = max(c for v in items_dict.values() for c in v.values())
-        return mw, num_items, best_chance
+        return mw, len(items_dict), best_chance
 
-    sorted_locations = sorted(by_location.items(), key=sort_key, reverse=True)
+    weighted.sort(key=sort_key, reverse=True)
 
     # Determine column order: first-seen across locations preserves grouping
     item_columns = []
     seen = set()
-    for _, items_dict in by_location.items():
+    for (_, items_dict), _mw in weighted:
         for col in items_dict:
             if col not in seen:
                 item_columns.append(col)
                 seen.add(col)
 
-    # Build header row with item names
-    headers = "".join(f"<th>{item}</th>" for item in item_columns)
-
     # Build table rows in sorted order (most relevant missions first).
     # Each row gets a `data-weight` attribute with the mission weight for client-side sorting.
     rows = []
-    for idx, ((location, mission), items_dict) in enumerate(sorted_locations if max_results == 0 else sorted_locations[:max_results], 1):
-        row_cells = f"<td>{idx}</td><td>{location}</td><td>{mission.get_name()}</td>"
-        mw = mission_weight(items_dict, mission)
+    limited = weighted if max_results == 0 else weighted[:max_results]
+    for idx, ((location, mission), items_dict, mw) in enumerate(((k, d, w) for (k, d), w in limited), 1):
+        cells = []
         for item in item_columns:
             if item in items_dict:
                 rotations = items_dict[item]
                 # Per-item weight: apply the same weighted-average formula to just this
                 # item's drops. This lets column headers sort by that item's relevance.
                 iw = mission_weight({item: dict(rotations)}, mission)
-                rot_strs = [f"{rot}:{chance:.2f}%" for rot, chance in sorted(rotations.items())]
-                row_cells += f'<td class="chance" data-weight="{iw:.4f}">{" ".join(rot_strs)}</td>'
+                text = " ".join(f"{rot}:{chance:.2f}%" for rot, chance in sorted(rotations.items()))
+                cells.append({"weight": f"{iw:.4f}", "text": text})
             else:
-                row_cells += '<td class="chance" data-weight="0">-</td>'
-        rows.append(f'<tr data-weight="{mw:.4f}">{row_cells}</tr>')
+                cells.append({"weight": "0", "text": None})
+        rows.append({"idx": idx, "location": location, "type": mission.get_name(), "weight": f"{mw:.4f}", "cells": cells})
 
-    row_html = "".join(rows)
-    unique_locations = len(sorted_locations)
-
-    # Build complete HTML with header and table
-    results_header = f'<div class="results-header"><span class="results-count">Found {len(results)} drops across {unique_locations} locations'
-    if max_results > 0:
-        results_header += f". Showing best {max_results}"
-    results_header += ":</span></div>"
-
-    table_html = (
-        '<table class="sortable"><thead><tr>'
-        "<th>#</th><th>Location</th><th>Type</th>" + headers + "</tr></thead><tbody>" + row_html + "</tbody></table></div>"
+    return render_template(
+        "results.html",
+        rows=rows,
+        columns=item_columns,
+        count=len(results),
+        num_locations=len(weighted),
+        max_results=max_results,
     )
-    return '<div class="table-wrapper">' + results_header + table_html
 
 
 # ============== Web Routes ==============
 
 
-@app.route("/")
+def _url(rule: str, **options):
+    """Register a route at the app root and (when set) under WEB_ROOT.
+
+    Registering both means the app works when served directly
+    (e.g. locally, where links point at /warframe/...) as well as
+    behind a reverse proxy that strips the /warframe prefix
+    (e.g. the production nginx setup).
+    """
+
+    def decorator(view):
+        app.add_url_rule(rule, view_func=view, **options)
+        if WEB_ROOT:
+            app.add_url_rule(WEB_ROOT + rule, view_func=view, **options)
+        return view
+
+    return decorator
+
+
+@_url("/")
 def index():
     """Main search page.
 
     GET parameters:
         q: Search query (required for results)
         n: Maximum results to show (0 = all)
-        exact: If present, require exact item name match
+        exact: If present/true, require exact item name match (default: partial)
         mission_type: Filter by mission type (comma-separated)
-        refresh: If present, request a cache refetch (only applied if the cache is ≥ 5 minutes old)
+        refresh: If present, request a cache refetch (only applied if the cache is >= 5 minutes old)
 
     Returns:
         HTML page with search form and optional results table.
     """
     # Parse and validate query parameters from URL.
     # Each parameter is sanitized: trimmed, bounded to prevent abuse/edge cases.
-    refresh = "refresh" in request.args  # Request cache refetch (guarded by 5-min minimum age)
+    refresh = parse_bool(request.args.get("refresh"))  # Request cache refetch (guarded by 5-min minimum age)
     query = (request.args.get("q") or "").strip()[:500]  # Search query, max 500 chars
-    n_raw = request.args.get("n")
-    num = max(0, min(int(n_raw), 10_000)) if n_raw else 0  # Clamp to [0, 10000]
-    partial = "partial" in request.args  # Partial match mode
-    partial_checked = " checked" if partial else ""  # For checkbox HTML
+    try:
+        num = parse_int(request.args.get("n"), 0, 0, 10_000)  # Clamp to [0, 10000]
+    except ValueError:
+        num = 0
+    exact = parse_bool(request.args.get("exact"))  # Exact match mode (default: partial)
+    exact_checked = " checked" if exact else ""  # For checkbox HTML
     mission_types = (request.args.get("mission_type") or "").strip()[:256]  # Mission type filter, max 256 chars
 
     # Parse mission type filter (comma-separated, max 20 types)
-    mission_types_filter = [mt.strip() for mt in mission_types.split(",")[:20] if mt.strip()]
+    mission_types_filter = {mt.strip().lower() for mt in mission_types.split(",")[:20] if mt.strip()}
 
     # Refresh data from API cache if the refresh flag is set.
-    _parser.refresh(force=refresh)
+    # Serve a 503 if no data could be loaded at all (API down, no cache).
+    try:
+        _parser.refresh(force=refresh)
+    except DataUnavailableError as e:
+        logger.error("Search unavailable: %s", e)
+        return (
+            render_template(
+                "index.html",
+                web_root=app.config["WEB_ROOT"],
+                query=query,
+                results_html="",
+                max_results=num,
+                error=str(e),
+                mission_type=mission_types or "",
+                refresh_qs="",
+                cache_age="--",
+                stale=False,
+            ),
+            503,
+        )
 
     # Compute cache age for display.
     ts = _parser.get_cache_timestamp()
@@ -298,23 +364,15 @@ def index():
         cache_age = "--"
         stale = False
 
-    # Parse comma-separated query terms, run search (exact or partial match),
-    # then apply optional mission type filter and result limit.
-    queries = parse_queries(query) if query else []
-    all_results = run_search(query, exact=not partial) if query else []
-
-    # Apply mission type filter if specified
+    # Run search (exact or partial match), then apply optional mission type
+    # filter. The formatter receives all (unlimited) results so it can
+    # compute weights from the full dataset before applying the row limit.
+    all_results = run_search(query, exact=exact) if query else []
     if mission_types_filter:
-        all_results = [r for r in all_results if r.mission_type.get_name().lower() in [mt.lower() for mt in mission_types_filter]]
+        all_results = [r for r in all_results if r.mission_type.get_name().lower() in mission_types_filter]
 
-    # Limit results if num > 0
-    results = all_results[:num] if num and num > 0 else all_results
-
-    # Format search results into an HTML table with weighted sorting.
-    # Passes all_results (unlimited) to the formatter so it can compute weights
-    # from the full dataset before applying the row limit.
-    if results:
-        results_html = format_multi_table_html(all_results, queries, num)
+    if all_results:
+        results_html = format_multi_table_html(all_results, num)
     else:
         results_html = ""
 
@@ -328,7 +386,7 @@ def index():
         query=query,
         results_html=results_html,
         max_results=num,
-        partial_checked=partial_checked,
+        exact_checked=exact_checked,
         mission_type=mission_types or "",
         refresh_qs=refresh_qs,
         cache_age=cache_age,
@@ -336,32 +394,39 @@ def index():
     )
 
 
-@app.route("/api/drops")
+@_url("/api/drops")
 def api_drops():
     """API endpoint for drop search (JSON).
 
     GET parameters:
         q: Search query (required)
-        exact: If present, require exact item name match
+        exact: If true, require exact item name match (default: partial)
         mission_type: Filter by mission type (can repeat for multiple)
-        n: Maximum results to show (0 = all)
+        n: Maximum results to show (0 = all, max 10000)
 
     Returns:
         JSON array of drop result objects.
     """
-    query = request.args.get("q", "")
+    query = (request.args.get("q") or "").strip()
     if not query:
         return jsonify(error="Missing query parameter 'q'"), 400
 
-    partial = "partial" in request.args  # Partial match mode
-    mission_types = request.args.getlist("mission_type")
-    max_results = int(request.args.get("n", "0"))
+    exact = parse_bool(request.args.get("exact"))
+    mission_types = {mt.strip().lower() for mt in request.args.getlist("mission_type") if mt.strip()}
+    try:
+        max_results = parse_int(request.args.get("n"), 0, 0, 10_000)
+    except ValueError:
+        return jsonify(error="Invalid 'n' parameter: must be an integer"), 400
 
-    results = run_search(query, exact=not partial)
+    try:
+        results = run_search(query, exact=exact)
+    except DataUnavailableError as e:
+        logger.error("Search unavailable: %s", e)
+        return jsonify(error="Drop data temporarily unavailable"), 503
 
     # Apply mission type filter if specified
     if mission_types:
-        results = [r for r in results if r.mission_type.get_name().lower() in [mt.lower() for mt in mission_types]]
+        results = [r for r in results if r.mission_type.get_name().lower() in mission_types]
 
     # Limit results if requested
     results = results[:max_results] if max_results > 0 else results
@@ -380,47 +445,53 @@ def api_drops():
     return jsonify(output)
 
 
-@app.route("/api/suggest-items")
+@_url("/api/suggest-items")
 def suggest_items():
     """Autocomplete endpoint for item names.
 
     GET parameters:
-        q: Prefix to match (case-insensitive)
+        q: Substring to match (case-insensitive)
 
     Returns:
         JSON array of up to 10 matching item names.
     """
-    prefix = request.args.get("q", "").lower()
-    data = _parser.get_drop_data()
+    prefix = (request.args.get("q") or "").lower()
+    try:
+        data = _parser.get_drop_data()
+    except DataUnavailableError:
+        return jsonify(error="Drop data temporarily unavailable"), 503
     # Filter items matching prefix, limit to 10
-    matches = [item for item in data.items if prefix in item.lower()][:10]
+    matches = [item for item, lowered in zip(data.items, data.items_lower) if prefix in lowered][:10]
     return jsonify(matches)
 
 
-@app.route("/api/suggest-mission-types")
+@_url("/api/suggest-mission-types")
 def suggest_mission_types():
     """Autocomplete endpoint for mission types.
 
     GET parameters:
-        q: Prefix to match (case-insensitive)
+        q: Substring to match (case-insensitive)
 
     Returns:
         JSON array of up to 10 matching mission types.
     """
-    prefix = request.args.get("q", "").lower()
-    data = _parser.get_drop_data()
-    mission_types = data.mission_types
+    prefix = (request.args.get("q") or "").lower()
+    try:
+        data = _parser.get_drop_data()
+    except DataUnavailableError:
+        return jsonify(error="Drop data temporarily unavailable"), 503
     # Filter types matching prefix, limit to 10
-    matches = [mt for mt in mission_types if prefix in mt.lower()][:10]
+    matches = [mt for mt, lowered in zip(data.mission_types, data.mission_types_lower) if prefix in lowered][:10]
     return jsonify(matches)
 
 
-@app.route("/static/<path:filename>")
+@_url("/static/<path:filename>")
 def static_file(filename):
-    """Serve static files (CSS, JS, images).
+    """Serve static files (CSS, JS, images) at the app root and under WEB_ROOT.
 
     Flask serves files from the static_folder configured on app creation.
-    This handles requests to /static/* URLs.
+    This handles requests to /static/* URLs (and /warframe/static/* when
+    WEB_ROOT is set, for direct access without a prefix-stripping proxy).
 
     Args:
         filename: Path to static file.

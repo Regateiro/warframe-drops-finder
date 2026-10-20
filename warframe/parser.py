@@ -3,13 +3,14 @@ Parser for Warframe drop table JSON data.
 
 This module provides the DropDataParser class which handles:
 - Fetching drop data from the API (via fetcher module)
-- Caching parsed results to avoid recomputation
-- Searching across all drop sources
+- Flattening all drop sources into a per-item index once per data load
+- Searching across all drop sources via that index
 - Extracting unique items and mission types for autocomplete
 
-The parser wraps multiple "iterator" methods that each handle a specific
-drop source (missions, relics, mods, blueprints, etc.). Results are
-combined and sorted by drop chance.
+The parser wraps the iterators module, whose functions yield every
+DropResult from one data source. Results are indexed by lowercased
+item name so searches (exact or substring) are fast regardless of
+dataset size.
 
 Public API (methods intended for external use):
 - refresh(force=False): Refresh data from API/cache
@@ -19,17 +20,21 @@ Public API (methods intended for external use):
 All other methods are internal (prefixed with underscore).
 """
 
+# defaultdict creates the item-name -> results index automatically
+from collections import defaultdict
+
 # Dataclass decorator for creating immutable data containers
 from dataclasses import dataclass
-
-# chain.from_iterable flattens results from multiple iterators into one list
-from itertools import chain
-
-# Type hints for better IDE support and documentation
-from typing import Any, Callable
+from typing import Any
 
 from .fetcher import fetch_drop_data
-from .models import DropResult, Mission
+from .iterators import collect_all_drops
+from .models import DropResult
+
+
+class DataUnavailableError(RuntimeError):
+    """Raised when no drop data is available (cache missing and API down)."""
+
 
 # ============== Data Container ==============
 
@@ -39,15 +44,20 @@ class DropData:
     """Parsed drop table data container.
 
     Holds the extracted unique items and mission types from all drop sources.
-    Used for autocomplete suggestions.
+    Used for autocomplete suggestions. The *_lower fields are aligned with
+    their display counterparts so matching avoids re-lowercasing per request.
 
     Attributes:
         items: Sorted list of unique item names from all sources.
+        items_lower: Lowercase item names, aligned with items.
         mission_types: Sorted list of unique mission types (game modes).
+        mission_types_lower: Lowercase mission types, aligned with mission_types.
     """
 
     items: list[str]
+    items_lower: list[str]
     mission_types: list[str]
+    mission_types_lower: list[str]
 
 
 # ============== Main Parser Class ==============
@@ -56,49 +66,42 @@ class DropData:
 class DropDataParser:
     """Parser for Warframe drop table JSON data.
 
-    This class handles fetching, caching, and searching drop table data.
-    It provides a clean public API while keeping internal implementation
-    details (iterators, caching logic) private.
-
-    Public methods:
-        refresh(force=False): Refresh data from API or cache
-        get_drop_data(): Get cached items and mission types
-        search_items(query, exact=False): Search for item drops
-
-    Internal methods (prefixed with _):
-        _recache(): Re-parse raw data into cached DropData
-        _extract_items(): Extract all unique item names
-        _extract_mission_types(): Extract unique mission types
-        _make_match_fn(): Create matching function for searches
-        _iter_*(): Individual iterators for each drop source
+    This class handles fetching, indexing, and searching drop table data.
+    Data is loaded lazily on the first operation (or immediately when
+    data is injected via the constructor, which keeps tests hermetic).
 
     Caching behavior:
-        - Data is fetched on first refresh() call (or at init if using __init__ without override)
-        - Parsed results are cached in _cache
+        - Data is fetched on the first refresh()/search/get_drop_data call
+        - Parsed results are indexed in _index (item name -> results)
         - Expired cache (> 24h) auto-refreshes regardless of force flag
-        - After initial load, refresh(force=False) uses in-memory data directly when cache is not expired
+        - After initial load, refresh(force=False) only stats the cache file
     """
 
-    def __init__(self):
-        """Initialize parser with empty cache.
+    def __init__(self, data: dict[str, Any] | None = None):
+        """Initialize parser, optionally with injected raw data.
 
-        Note: Does NOT automatically fetch data. Call refresh() explicitly
-        or the first search operation will trigger data load.
+        Args:
+            data: Raw drop data dictionary. When provided (tests), the
+                parser never touches the network or the cache file.
         """
-        # Cache for parsed DropData (items + mission types)
+        # Cached parsed DropData (items + mission types)
         self._cache: DropData | None = None
-        # Raw data from API (used by iterators)
-        self._data: dict[str, Any] | None = None
+        # Raw data from API (used to build the index)
+        self._data: dict[str, Any] | None = data
+        # Index of drop results by lowercased item name
+        self._index: dict[str, list[DropResult]] = {}
         # Timestamp of last successful API fetch
         self._cache_timestamp: float | None = None
-        # Trigger initial data load
-        self.refresh()
+        # Injected data must never trigger a network fetch
+        self._injected = data is not None
+        if data is not None:
+            self._recache()
 
     def refresh(self, force: bool = False) -> None:
         """Refresh cached data from the API or re-parse from local cache.
 
         Expired cache (> 24h old) auto-refreshes regardless of force flag.
-        When force=True and the cache is ≥ 5 minutes old, forces a refetch.
+        When force=True and the cache is >= 5 minutes old, forces a refetch.
         If the cache is less than 5 minutes old, it always uses cached data
         to prevent misuse (rapid successive API calls).
 
@@ -106,45 +109,68 @@ class DropDataParser:
             force: If True, force a refetch when the cache is at least
                    5 minutes old. Expired cache auto-refreshes regardless.
                    If False, use cached data if available.
+
+        Raises:
+            DataUnavailableError: If no data could be loaded at all.
         """
+        if self._injected:
+            if self._cache is None:
+                self._recache()
+            return
+
         # Fetch data if necessary (from cache or API, depending on force flag).
         # Returns (data dict | None, cache timestamp, boolean indicating fresh data was fetched).
         data, self._cache_timestamp, api_fetched = fetch_drop_data(force_refresh=force, force_load=self._data is None)
-
-        # If data is None and we have no existing data, we can't proceed.
-        # This can happen if the API request fails and there's no cache to fall back on.
-        if data is None and self._data is None:
-            raise SystemExit(1, "No data available to load.")
 
         # Update data and cache mtime if data was loaded, regardless of source (API or cache)
         if data is not None:
             self._data = data
 
-        # Re-cache if this is first load or if we got fresh data from the API
+        # If we have no data at all, the API request failed and there's no cache.
+        if self._data is None:
+            raise DataUnavailableError("No drop data available (API unreachable and no cache on disk).")
+
+        # Re-index if this is first load or if we got fresh data from the API
         if self._cache is None or api_fetched:
             self._recache()
 
-    def _recache(self) -> None:
-        """Parse raw API data into structured DropData and cache it.
+    def _ensure_loaded(self) -> None:
+        """Load data on first use, raising DataUnavailableError on failure."""
+        if self._cache is None:
+            self.refresh()
 
-        Extracts unique items and mission types from the raw dictionary,
-        along with their average time per cycle, and stores in _cache for fast access.
+    def _recache(self) -> None:
+        """Flatten raw API data into the item index and DropData cache.
+
+        Builds a dict of lowercased item name -> list of DropResult across
+        all data sources, plus the sorted unique item and mission type lists
+        used for autocomplete.
         """
+        index: dict[str, list[DropResult]] = defaultdict(list)
+        for result in collect_all_drops(self._data):
+            index[result.item_name.lower()].append(result)
+        self._index = dict(index)
+
+        items = sorted({result.item_name for results in self._index.values() for result in results if result.item_name})
+        mission_types = self._extract_mission_types()
         self._cache = DropData(
-            items=self._extract_items(),
-            mission_types=self._extract_mission_types(),
+            items=items,
+            items_lower=[item.lower() for item in items],
+            mission_types=mission_types,
+            mission_types_lower=[mt.lower() for mt in mission_types],
         )
 
     def get_drop_data(self) -> DropData:
         """Get parsed drop data from the cache.
 
-        Returns the cached DropData containing unique items and mission types.
-        Used for autocomplete dropdowns.
-
         Returns:
             DropData with extracted items and mission types.
+        Used for autocomplete dropdowns.
+
+        Raises:
+            DataUnavailableError: If no data could be loaded at all.
         """
-        # Return cached data
+        self._ensure_loaded()
         return self._cache
 
     def get_cache_timestamp(self) -> float | None:
@@ -156,80 +182,6 @@ class DropDataParser:
         return self._cache_timestamp
 
     # ============== Extraction Methods ==============
-
-    def _extract_items(self) -> list[str]:
-        """Extract all unique item names from drop data.
-
-        Scans all drop sources and collects unique item names:
-        - Mission rewards (dict and list formats)
-        - Relic rewards
-        - Mod locations
-        - Blueprint locations
-        - Key rewards
-        - Transient rewards
-        - Sortie rewards
-        - Bounty rewards (auto-discovered by structure)
-
-        Returns:
-            Sorted list of unique item name strings.
-        """
-        items = set()  # Use set for automatic deduplication
-
-        # Extract from mission rewards (dict format: {tier: [items]})
-        for missions in self._data.get("missionRewards", {}).values():
-            for details in missions.values():
-                rewards = details.get("rewards", {})
-                if isinstance(rewards, dict):
-                    for tier_list in rewards.values():
-                        for item in tier_list:
-                            items.add(item.get("itemName", ""))
-                elif isinstance(rewards, list):
-                    for item in rewards:
-                        items.add(item.get("itemName", ""))
-
-        # Extract from relic rewards
-        for relic in self._data.get("relics", []):
-            for reward in relic.get("rewards", []):
-                items.add(reward.get("itemName", ""))
-
-        # Extract from mod locations
-        for mod_loc in self._data.get("modLocations", []):
-            items.add(mod_loc.get("modName", ""))
-
-        # Extract from blueprint locations
-        for bp_loc in self._data.get("blueprintLocations", []):
-            items.add(bp_loc.get("blueprintName", bp_loc.get("itemName", "")))
-            items.add(bp_loc.get("itemName", ""))
-
-        # Extract from key rewards
-        for key in self._data.get("keyRewards", []):
-            rewards = key.get("rewards", {})
-            if isinstance(rewards, dict):
-                for tier_list in rewards.values():
-                    for item in tier_list:
-                        items.add(item.get("itemName", ""))
-
-        # Extract from transient rewards
-        for transient in self._data.get("transientRewards", []):
-            for reward in transient.get("rewards", []):
-                items.add(reward.get("itemName", ""))
-
-        # Extract from sortie rewards
-        for reward in self._data.get("sortieRewards", []):
-            items.add(reward.get("itemName", ""))
-
-        # Extract from bounty rewards (auto-discovered by structure)
-        from .iterators import _find_bounty_keys
-
-        for key in _find_bounty_keys(self._data):
-            for bounty in self._data[key]:
-                rewards = bounty.get("rewards", {})
-                if isinstance(rewards, dict):
-                    for tier_list in rewards.values():
-                        for item in tier_list:
-                            items.add(item.get("itemName", ""))
-
-        return sorted(items)  # Return alphabetically sorted
 
     def _extract_mission_types(self) -> list[str]:
         """Extract unique mission types (game modes) from drop data.
@@ -250,306 +202,32 @@ class DropDataParser:
 
     # ============== Search Methods ==============
 
-    def _make_match_fn(self, query: str, exact: bool) -> Callable[[str], bool]:
-        """Create a case-insensitive matching function for item names.
-
-        Factory function that returns a predicate for testing whether
-        an item name matches the query.
-
-        Args:
-            query: The search string.
-            exact: If True, match exact string. Otherwise substring match.
-
-        Returns:
-            A function taking an item name and returning bool.
-        """
-        # Exact: require full match; Substring: check containment
-        # Both compare lowercase for case-insensitivity
-        return lambda name: (query.lower() == name.lower() if exact else query.lower() in name.lower())
-
     def search_items(self, query: str, exact: bool = False) -> list[DropResult]:
         """Search for items matching the query across all drop sources.
 
-        This is the main public search method. It runs each internal
-        iterator and combines the results, then sorts by drop chance.
+        Looks up the prebuilt per-item index: a dict lookup for exact
+        matches, or a scan over unique item names (not dataset entries)
+        for substring matches.
 
         Args:
             query: The search string to match against item names.
             exact: If True, require exact match. Otherwise substring match.
 
         Returns:
-            List of DropResult sorted by drop chance (highest first).
+            Deduplicated list of DropResult sorted by drop chance (highest first).
+
+        Raises:
+            DataUnavailableError: If no data could be loaded at all.
         """
-        # List of iterator methods to call
-        iterators = [
-            self._iter_mission_drops,
-            self._iter_relic_drops,
-            self._iter_mod_drops,
-            self._iter_blueprint_drops,
-            self._iter_key_drops,
-            self._iter_transient_drops,
-            self._iter_sortie_drops,
-            self._iter_bounty_drops,
-        ]
-        # Run each iterator and flatten results
-        results = list(chain.from_iterable(it(query, exact) for it in iterators))
-        # Sort by chance, highest first
-        return sorted(results, key=lambda x: x.chance, reverse=True)
-
-    # ============== Internal Iterators ==============
-
-    def _iter_mission_drops(self, query: str, exact: bool = False) -> list[DropResult]:
-        """Internal: iterate mission drop results matching query.
-
-        Searches mission rewards for items matching the query.
-
-        Args:
-            query: Search string.
-            exact: Exact or substring match.
-
-        Returns:
-            List of matching DropResult.
-        """
-        data = self._data
-        results: list[DropResult] = []
-        match_fn = self._make_match_fn(query, exact)
-
-        for planet, missions in data.get("missionRewards", {}).items():
-            for mission, details in missions.items():
-                game_mode = details.get("gameMode", "")
-                rewards = details.get("rewards", {})
-                location = f"{planet} - {mission}"
-
-                mission = Mission(game_mode)
-                if isinstance(rewards, dict):
-                    for tier, items in rewards.items():
-                        for item in items:
-                            item_name = item.get("itemName", "")
-                            if match_fn(item_name):
-                                results.append(
-                                    DropResult(
-                                        item_name,
-                                        item["chance"],
-                                        location,
-                                        mission,
-                                        tier,
-                                    )
-                                )
-                elif isinstance(rewards, list):
-                    for item in rewards:
-                        item_name = item.get("itemName", "")
-                        if match_fn(item_name):
-                            results.append(DropResult(item_name, item["chance"], location, mission, "-"))
-
-        return results
-
-    def _iter_relic_drops(self, query: str, exact: bool = False) -> list[DropResult]:
-        """Internal: iterate relic drop results matching query.
-
-        Searches relic rewards for items matching the query.
-
-        Args:
-            query: Search string.
-            exact: Exact or substring match.
-
-        Returns:
-            List of matching DropResult.
-        """
-        data = self._data
-        results: list[DropResult] = []
-        match_fn = self._make_match_fn(query, exact)
-
-        for relic in data.get("relics", []):
-            tier = relic.get("tier", "")
-            relic_name = relic.get("relicName", "")
-            state = relic.get("state", "Intact")
-            for reward in relic.get("rewards", []):
-                item_name = reward.get("itemName", "")
-                if match_fn(item_name):
-                    results.append(
-                        DropResult(
-                            item_name,
-                            reward["chance"],
-                            f"Relic: {tier} {relic_name}",
-                            Mission(""),
-                            state,
-                        )
-                    )
-
-        return results
-
-    def _iter_mod_drops(self, query: str, exact: bool = False) -> list[DropResult]:
-        """Internal: iterate mod drop results matching query.
-
-        Searches mod locations for items matching the query.
-
-        Args:
-            query: Search string.
-            exact: Exact or substring match.
-
-        Returns:
-            List of matching DropResult.
-        """
-        data = self._data
-        results: list[DropResult] = []
-        match_fn = self._make_match_fn(query, exact)
-
-        for mod_loc in data.get("modLocations", []):
-            mod_name = mod_loc.get("modName", "Unknown")
-            for enemy in mod_loc.get("enemies", []):
-                enemy_name = enemy.get("enemyName", "")
-                if match_fn(mod_name):
-                    results.append(
-                        DropResult(
-                            mod_name,
-                            enemy["chance"],
-                            f"Mod drop: {enemy_name}",
-                            Mission(""),
-                            "-",
-                        )
-                    )
-
-        return results
-
-    def _iter_blueprint_drops(self, query: str, exact: bool = False) -> list[DropResult]:
-        """Internal: iterate blueprint drop results matching query.
-
-        Searches blueprint locations for items matching the query.
-
-        Args:
-            query: Search string.
-            exact: Exact or substring match.
-
-        Returns:
-            List of matching DropResult.
-        """
-        data = self._data
-        results: list[DropResult] = []
-        match_fn = self._make_match_fn(query, exact)
-
-        for bp_loc in data.get("blueprintLocations", []):
-            bp_name = bp_loc.get("blueprintName", bp_loc.get("itemName", "Unknown"))
-            for enemy in bp_loc.get("enemies", []):
-                item_name = bp_name
-                if match_fn(item_name):
-                    results.append(
-                        DropResult(
-                            item_name,
-                            enemy["chance"],
-                            f"Blueprint: {enemy['enemyName']}",
-                            Mission(""),
-                            "-",
-                        )
-                    )
-
-        return results
-
-    def _iter_key_drops(self, query: str, exact: bool = False) -> list[DropResult]:
-        """Internal: iterate key drop results matching query.
-
-        Searches key rewards for items matching the query.
-
-        Args:
-            query: Search string.
-            exact: Exact or substring match.
-
-        Returns:
-            List of matching DropResult.
-        """
-        data = self._data
-        results: list[DropResult] = []
-        match_fn = self._make_match_fn(query, exact)
-
-        for key in data.get("keyRewards", []):
-            key_name = key.get("keyName", "Unknown")
-            rewards = key.get("rewards", {})
-            if isinstance(rewards, dict):
-                for tier, items in rewards.items():
-                    for item in items:
-                        item_name = item.get("itemName", "")
-                        if match_fn(item_name):
-                            results.append(
-                                DropResult(
-                                    item_name,
-                                    item["chance"],
-                                    f"Key: {key_name}",
-                                    Mission(""),
-                                    tier,
-                                )
-                            )
-
-        return results
-
-    def _iter_transient_drops(self, query: str, exact: bool = False) -> list[DropResult]:
-        """Internal: iterate transient reward drop results matching query.
-
-        Searches transient rewards for items matching the query.
-
-        Args:
-            query: Search string.
-            exact: Exact or substring match.
-
-        Returns:
-            List of matching DropResult.
-        """
-        data = self._data
-        results: list[DropResult] = []
-        match_fn = self._make_match_fn(query, exact)
-
-        for transient in data.get("transientRewards", []):
-            place = transient.get("objectiveName", "Unknown")
-            for reward in transient.get("rewards", []):
-                item_name = reward.get("itemName", "")
-                rotation = reward.get("rotation", "")
-                if match_fn(item_name):
-                    results.append(
-                        DropResult(
-                            item_name,
-                            reward["chance"],
-                            f"Transient: {place}",
-                            Mission(""),
-                            rotation or "-",
-                        )
-                    )
-
-        return results
-
-    def _iter_sortie_drops(self, query: str, exact: bool = False) -> list[DropResult]:
-        """Internal: iterate sortie drop results matching query.
-
-        Searches sortie rewards for items matching the query.
-
-        Args:
-            query: Search string.
-            exact: Exact or substring match.
-
-        Returns:
-            List of matching DropResult.
-        """
-        data = self._data
-        results: list[DropResult] = []
-        match_fn = self._make_match_fn(query, exact)
-
-        for reward in data.get("sortieRewards", []):
-            item_name = reward.get("itemName", "")
-            if match_fn(item_name):
-                results.append(DropResult(item_name, reward["chance"], "Sortie", Mission(""), "-"))
-
-        return results
-
-    def _iter_bounty_drops(self, query: str, exact: bool = False) -> list[DropResult]:
-        """Internal: iterate all bounty drop results matching query.
-
-        Auto-discovers bounty tables by structure. Delegates to the
-        dynamic bounty iterator from the iterators module.
-
-        Args:
-            query: Search string.
-            exact: Exact or substring match.
-
-        Returns:
-            List of matching DropResult.
-        """
-        from .iterators import iter_bounty_drops
-
-        return iter_bounty_drops(self._data, query, exact)
+        self._ensure_loaded()
+        needle = query.lower()
+        if not needle:
+            return []
+        if exact:
+            matches = self._index.get(needle, [])
+        else:
+            matches = [result for key, results in self._index.items() if needle in key for result in results]
+        # Dedupe (identical drops can appear via overlapping data entries)
+        unique = list(dict.fromkeys(matches))
+        # Sort by chance (highest first)
+        return sorted(unique, key=lambda r: r.chance, reverse=True)

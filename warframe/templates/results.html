@@ -1,0 +1,17 @@
+<div class="table-wrapper">
+    <div class="results-header"><span class="results-count">Found {{ count }} drops across {{ num_locations }} locations{% if max_results > 0 %}. Showing best {{ max_results }}{% endif %}:</span></div>
+    <table class="sortable">
+        <thead>
+            <tr>
+                <th>#</th><th>Location</th><th>Type</th>{% for item in columns %}<th>{{ item }}</th>{% endfor %}
+            </tr>
+        </thead>
+        <tbody>
+            {% for row in rows %}
+            <tr data-weight="{{ row.weight }}">
+                <td>{{ row.idx }}</td><td>{{ row.location }}</td><td>{{ row.type }}</td>{% for cell in row.cells %}{% if cell.text %}<td class="chance" data-weight="{{ cell.weight }}">{{ cell.text }}</td>{% else %}<td class="chance" data-weight="0">-</td>{% endif %}{% endfor %}
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>

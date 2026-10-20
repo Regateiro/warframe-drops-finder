@@ -1,23 +1,26 @@
 """
 Data models for Warframe drop table search results.
 
-This module defines the DropResult dataclass which represents a single
-item drop from the Warframe game. It includes the item name, drop chance,
-location, mission type (game mode), and rotation.
+This module defines the Mission and DropResult dataclasses which represent
+a mission type and a single item drop from the Warframe game. DropResult
+includes the item name, drop chance, location, mission type (game mode),
+and rotation.
 
 DropResult is used throughout the application to return search results
 to users via the web interface or API.
 """
 
-# Import dataclass decorator for creating immutable data containers
+# Logging instead of printing unknown mission types to stdout
+import logging
 from dataclasses import dataclass
-
-# ClassVar: class-level constant, not an instance field
 from typing import ClassVar
+
+logger = logging.getLogger(__name__)
 
 
 # frozen=True makes instances immutable (hashable, comparisons work)
-@dataclass(frozen=True)
+# slots=True keeps memory low when millions of instances are created for the index
+@dataclass(frozen=True, slots=True)
 class Mission:
     """Represents a mission type with its average cycle time.
 
@@ -61,6 +64,9 @@ class Mission:
         "Void Flood": 240,
     }
 
+    # Fallback used for unknown mission types (also used for non-mission drops)
+    DEFAULT_ATPC: ClassVar[int] = 120
+
     name: str
 
     def get_name(self) -> str:
@@ -68,12 +74,18 @@ class Mission:
         return self.name
 
     def get_average_time_per_cycle(self) -> int:
-        """Return the average time per cycle in seconds."""
-        # Warn if the mission type is not found in the MISSION_ATPC dictionary
-        if self.name not in Mission.MISSION_ATPC:
-            print(f"WARNING: Mission '{self.name}' not found in MISSION_ATPC.")
-        # Return the average time per cycle for this mission type, or 120 seconds as a default
-        return Mission.MISSION_ATPC.get(self.name, 120)
+        """Return the average time per cycle in seconds.
+
+        Unknown mission types fall back to DEFAULT_ATPC and are logged
+        once per name (not once per call, which used to flood the logs).
+        An empty name (relics, mods, bounties, ...) is expected and silent.
+        """
+        if self.name in Mission.MISSION_ATPC:
+            return Mission.MISSION_ATPC[self.name]
+        if self.name and self.name not in _warned_unknown_missions:
+            _warned_unknown_missions.add(self.name)
+            logger.warning("Mission type %r not found in MISSION_ATPC; using default %ds", self.name, Mission.DEFAULT_ATPC)
+        return Mission.DEFAULT_ATPC
 
     @staticmethod
     def get_average_restart_time() -> int:
@@ -81,13 +93,17 @@ class Mission:
         return 20
 
 
-@dataclass(frozen=True)
+# Names of unknown mission types already logged (avoids log spam per request)
+_warned_unknown_missions: set[str] = set()
+
+
+@dataclass(frozen=True, slots=True)
 class DropResult:
     """A single drop result from the Warframe drop tables.
 
     This represents one possible way to obtain an item in the game,
     including drop location, chance, game mode (mission type),
-        and rotation.
+    and rotation.
 
     Attributes:
         item_name: Name of the item that can drop.
@@ -104,48 +120,3 @@ class DropResult:
     location: str
     mission_type: Mission
     rotation: str
-
-    def to_tuple(self) -> tuple[str, float, str, str, int, str]:
-        """Convert this DropResult to a tuple for serialization.
-
-        Useful for caching results or converting to JSON-compatible format.
-        Tuple order:
-        ``(item_name, chance, location, mission_type_name,
-        average_time_per_cycle, rotation)``.
-
-        Returns:
-            A 6-element tuple with all DropResult fields.
-        """
-        return (
-            self.item_name,
-            self.chance,
-            self.location,
-            self.mission_type.get_name(),
-            self.mission_type.get_average_time_per_cycle(),
-            self.rotation,
-        )
-
-    @classmethod
-    def from_tuple(
-        cls,
-        t: tuple[str, float, str, str, int, str],
-    ) -> "DropResult":
-        """Create a DropResult from a tuple.
-
-        Inverse of ``to_tuple()``. Creates an instance from
-            a 5-element tuple.
-
-        Args:
-            t: Tuple of ``(item_name, chance, location,
-               mission_type_name, avg_time_per_cycle, rotation)``.
-
-        Returns:
-            A new DropResult instance with the given values.
-        """
-        return cls(
-            t[0],
-            t[1],
-            t[2],
-            Mission(t[3]),
-            t[5],
-        )

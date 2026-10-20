@@ -5,7 +5,7 @@ This module handles fetching drop table data from the WarframeStat.us API
 and caching it locally to avoid repeated network requests.
 
 Source: https://drops.warframestat.us/data/all.json
-Cache: .drop_cache.json (24 hour TTL by default)
+Cache: .drop_cache.json next to the project root (24 hour TTL by default)
 
 The caching strategy:
 - On first run, fetch data from the API and save to cache file
@@ -18,16 +18,26 @@ The caching strategy:
 # Standard library imports for file I/O, networking, and time
 import fcntl
 import json
+import logging
 import os
 import time
 import urllib.error
 import urllib.request
+from pathlib import Path
 from typing import Any
+
+# Allow .env overrides (e.g. CACHE_FILE) before reading the environment
+from dotenv import load_dotenv
+
+load_dotenv()
+
+logger = logging.getLogger(__name__)
 
 # API endpoint for Warframe drop tables (WarframeStat.us)
 API_URL = "https://drops.warframestat.us/data/all.json"
-# Local cache file to store fetched data
-CACHE_FILE = ".drop_cache.json"
+# Cache file, anchored to the project root (not the current working directory)
+# so the cache works regardless of where the server is started from.
+CACHE_FILE = os.getenv("CACHE_FILE") or str(Path(__file__).resolve().parent.parent / ".drop_cache.json")
 # Lock file to coordinate cache access across gunicorn workers
 LOCK_FILE = CACHE_FILE + ".lock"
 # Cache time-to-live in seconds (86400 = 24 hours)
@@ -36,7 +46,7 @@ CACHE_MAX_AGE = 86400
 FORCE_REFRESH_MIN_AGE = 300
 
 
-def fetch_drop_data(force_refresh: bool = False, force_load: bool = False) -> tuple[dict[str, Any], float | None, bool]:
+def fetch_drop_data(force_refresh: bool = False, force_load: bool = False) -> tuple[dict[str, Any] | None, float | None, bool]:
     """Fetch drop data from cache or API.
 
     This is the main entry point for getting drop table data.
@@ -53,9 +63,8 @@ def fetch_drop_data(force_refresh: bool = False, force_load: bool = False) -> tu
     Returns:
         A tuple of (drop data dictionary, cache timestamp, boolean indicating if refreshed).
         The boolean is True if new data was fetched from the API, False if from cache.
-
-    Raises:
-        SystemExit(1): If no cached data exists and API request fails.
+        When no refresh is needed and data is already loaded in memory,
+        the data dictionary is None and the caller keeps its in-memory copy.
     """
     # No cache file at all -> fetch fresh data to populate initial cache
     if not os.path.exists(CACHE_FILE):
@@ -83,30 +92,28 @@ def fetch_drop_data(force_refresh: bool = False, force_load: bool = False) -> tu
     return None, disk_cache_mtime, False
 
 
-def load_drop_data() -> tuple[dict[str, Any], float | None, bool]:
+def load_drop_data() -> tuple[dict[str, Any] | None, float | None, bool]:
     """Load drop data from cache, refreshing if corrupted.
 
     Returns:
         A tuple of (drop data dictionary, cache timestamp, boolean indicating if refreshed).
         The boolean is True if new data was fetched from the API due to cache issues, False if from cache.
     """
-    with open(CACHE_FILE) as f:
-        try:
+    try:
+        with open(CACHE_FILE) as f:
             return json.load(f), os.path.getmtime(CACHE_FILE), False
-        except (json.JSONDecodeError, IOError) as e:
-            print(f"Cache error: {e}. Refreshing data.")
-            return refresh_drop_data()
+    except (json.JSONDecodeError, IOError, OSError) as e:
+        logger.warning("Cache error: %s. Refreshing data.", e)
+        return refresh_drop_data()
 
 
 def _read_cache_safe() -> tuple[dict[str, Any] | None, float | None, bool]:
     """Try to read cache, return data or None if missing/corrupted."""
-    if not os.path.exists(CACHE_FILE):
-        return None, None, False
     try:
         with open(CACHE_FILE) as f:
             return json.load(f), os.path.getmtime(CACHE_FILE), False
-    except (json.JSONDecodeError, IOError) as e:
-        print(f"Cache corrupted: {e}")
+    except (FileNotFoundError, json.JSONDecodeError, IOError, OSError) as e:
+        logger.warning("Cache unreadable: %s", e)
         return None, None, False
 
 
@@ -142,15 +149,17 @@ def refresh_drop_data() -> tuple[dict[str, Any] | None, float | None, bool]:
         if os.path.exists(CACHE_FILE):
             age = time.time() - os.path.getmtime(CACHE_FILE)
             if age < FORCE_REFRESH_MIN_AGE:
-                with open(CACHE_FILE) as f:
-                    return json.load(f), os.path.getmtime(CACHE_FILE), False
+                cached = _read_cache_safe()
+                if cached[0] is not None:
+                    return cached
 
         try:
-            request = urllib.request.Request(API_URL, headers={"User-Agent": "Mozilla/5.0"})
-            with urllib.request.urlopen(request, timeout=60) as response:
-                data = json.loads(response.read())
-        except urllib.error.URLError as e:
-            print(f"Failed to fetch data: {e}")
+            api_request = urllib.request.Request(API_URL, headers={"User-Agent": "Mozilla/5.0"})
+            with urllib.request.urlopen(api_request, timeout=60) as response:
+                raw = response.read()
+            data = json.loads(raw)
+        except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as e:
+            logger.error("Failed to fetch data: %s", e)
             cached = _read_cache_safe()
             return cached if cached[0] is not None else (None, None, False)
 
@@ -160,6 +169,7 @@ def refresh_drop_data() -> tuple[dict[str, Any] | None, float | None, bool]:
             json.dump(data, f)
         os.replace(tmp_file, CACHE_FILE)
 
+        logger.info("Drop data refreshed from API (%d bytes)", len(raw))
         return data, os.path.getmtime(CACHE_FILE), True
     finally:
         if lock_fd is not None:

@@ -1,4 +1,5 @@
 .drop_cache.json
+.drop_cache.json.lock
 .env
 .vscode/
 __pycache__/
